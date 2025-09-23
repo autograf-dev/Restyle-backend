@@ -26,7 +26,7 @@ exports.handler = async (event) => {
     const { data, error } = await supabase
       .from("restyle_bookings")
       .select("*")
-      .order("created_at", { ascending: false }) // Order by most recent first
+      .order("id", { ascending: false }) // Order by newest id first
 
     if (error) {
       console.error("❌ Supabase error:", error)
