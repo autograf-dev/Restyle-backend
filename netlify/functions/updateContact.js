@@ -42,7 +42,7 @@ exports.handler = async function (event) {
     }
 
     // Validate required fields
-    const requiredFields = ['firstName', 'lastName', 'name', 'email', 'phone'];
+    const requiredFields = ['firstName', 'lastName', 'name', 'phone'];
     for (const field of requiredFields) {
       if (!data[field]) {
         return {
