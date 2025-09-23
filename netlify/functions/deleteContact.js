@@ -42,6 +42,18 @@ exports.handler = async function (event) {
       }
     );
 
+    // 🔄 Delete from Supabase contact table (ignore if not found)
+    try {
+      const { createClient } = require("@supabase/supabase-js");
+      const supabaseUrl = process.env.SUPABASE_URL;
+      const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      const supabase = createClient(supabaseUrl, supabaseKey);
+
+      await supabase.from("restyle_contacts").delete().eq("id", contactId);
+    } catch (e) {
+      console.warn("⚠️ Supabase delete after deleteContact failed (ignoring):", e.message || e);
+    }
+
     return {
       statusCode: 200,
       headers: {

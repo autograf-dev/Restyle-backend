@@ -77,6 +77,31 @@ exports.handler = async function (event) {
       }
     );
 
+    // 🔄 Sync to Supabase contact table
+    try {
+      const { createClient } = require("@supabase/supabase-js");
+      const supabaseUrl = process.env.SUPABASE_URL;
+      const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      const supabase = createClient(supabaseUrl, supabaseKey);
+
+      const now = new Date();
+      const contactRow = {
+        id: contactId,
+        first_name: data.firstName,
+        first_name_lowercase: data.firstName?.toLowerCase(),
+        last_name: data.lastName,
+        last_name_lowercase: data.lastName?.toLowerCase(),
+        full_name_lowercase: data.name?.toLowerCase(),
+        email: data.email || null,
+        phone: data.phone || null,
+        date_updated: now,
+      };
+
+      await supabase.from("restyle_contacts").upsert([contactRow], { onConflict: "id" });
+    } catch (e) {
+      console.warn("⚠️ Supabase sync after updateContact failed:", e.message || e);
+    }
+
     return {
       statusCode: 200,
       headers: corsHeaders,
