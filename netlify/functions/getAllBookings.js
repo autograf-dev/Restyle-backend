@@ -39,21 +39,46 @@ exports.handler = async function (event) {
     const startDate = params.startDate; // Optional date filter
     const endDate = params.endDate; // Optional date filter
 
-    // Step 1: Get all contacts from the location
+    // Step 1: Get all contacts from the location (with pagination)
     console.log('📋 Fetching contacts...');
-    const contactsResponse = await axios.get(
-      `https://services.leadconnectorhq.com/contacts/?locationId=${LOCATION_ID}&limit=1000`,
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          Accept: 'application/json',
-          Version: '2021-07-28'
-        }
-      }
-    );
+    const allContacts = [];
+    let hasMore = true;
+    let contactSkip = 0;
+    const contactLimit = 100; // GHL API limit
 
-    const contacts = contactsResponse.data.contacts || [];
-    console.log(`📞 Found ${contacts.length} contacts`);
+    while (hasMore) {
+      try {
+        const contactsResponse = await axios.get(
+          `https://services.leadconnectorhq.com/contacts/?locationId=${LOCATION_ID}&limit=${contactLimit}&skip=${contactSkip}`,
+          {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              Accept: 'application/json',
+              Version: '2021-07-28'
+            }
+          }
+        );
+
+        const contacts = contactsResponse.data.contacts || [];
+        allContacts.push(...contacts);
+        
+        console.log(`📞 Fetched ${contacts.length} contacts (total: ${allContacts.length})`);
+        
+        // Check if we got fewer contacts than the limit (means we're at the end)
+        if (contacts.length < contactLimit) {
+          hasMore = false;
+        } else {
+          contactSkip += contactLimit;
+          await delay(200); // Add delay between contact pagination requests
+        }
+      } catch (err) {
+        console.error('❌ Error fetching contacts:', err.response?.data || err.message);
+        hasMore = false; // Stop pagination on error
+      }
+    }
+
+    const contacts = allContacts;
+    console.log(`📞 Total contacts found: ${contacts.length}`);
 
     // Step 2: Fetch appointments for each contact
     console.log('📅 Fetching appointments for all contacts...');
