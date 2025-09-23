@@ -39,57 +39,70 @@ exports.handler = async function (event) {
     const startDate = params.startDate; // Optional date filter
     const endDate = params.endDate; // Optional date filter
 
-    // Step 1: Get all contacts from the location (with pagination)
-    console.log('📋 Fetching contacts...');
-    const allContacts = [];
-    let hasMore = true;
-    let contactSkip = 0;
-    const contactLimit = 100; // GHL API limit
-
-    while (hasMore) {
-      try {
-        const contactsResponse = await axios.get(
-          `https://services.leadconnectorhq.com/contacts/?locationId=${LOCATION_ID}&limit=${contactLimit}&skip=${contactSkip}`,
-          {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              Accept: 'application/json',
-              Version: '2021-07-28'
-            }
-          }
-        );
-
-        const contacts = contactsResponse.data.contacts || [];
-        allContacts.push(...contacts);
-        
-        console.log(`📞 Fetched ${contacts.length} contacts (total: ${allContacts.length})`);
-        
-        // Check if we got fewer contacts than the limit (means we're at the end)
-        if (contacts.length < contactLimit) {
-          hasMore = false;
-        } else {
-          contactSkip += contactLimit;
-          await delay(200); // Add delay between contact pagination requests
+    // Step 1: Get all calendars from the location
+    console.log('📋 Fetching all calendars...');
+    const calendarsResponse = await axios.get(
+      `https://services.leadconnectorhq.com/calendars/?locationId=${LOCATION_ID}`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: 'application/json',
+          Version: '2021-04-15'
         }
-      } catch (err) {
-        console.error('❌ Error fetching contacts:', err.response?.data || err.message);
-        hasMore = false; // Stop pagination on error
       }
-    }
+    );
 
-    const contacts = allContacts;
-    console.log(`📞 Total contacts found: ${contacts.length}`);
+    const calendars = calendarsResponse.data.calendars || [];
+    console.log(`📅 Found ${calendars.length} calendars`);
 
-    // Step 2: Fetch appointments for each contact
-    console.log('📅 Fetching appointments for all contacts...');
+    // Step 2: Try different approaches to get all appointments
+    console.log('📊 Fetching all appointments...');
     const allAppointments = [];
-    const contactChunks = chunkArray(contacts, 10); // Process in chunks to avoid rate limits
 
-    for (const chunk of contactChunks) {
-      const appointmentPromises = chunk.map(async (contact) => {
+    // Approach 1: Try to get appointments directly from calendars/events/appointments
+    try {
+      console.log('🔍 Trying direct appointments endpoint...');
+      
+      // Calculate date range (last 6 months to next 6 months)
+      const now = new Date();
+      const startDate = new Date(now);
+      startDate.setMonth(now.getMonth() - 6);
+      const endDate = new Date(now);
+      endDate.setMonth(now.getMonth() + 6);
+
+      const startDateStr = startDate.toISOString().split('T')[0];
+      const endDateStr = endDate.toISOString().split('T')[0];
+
+      const appointmentsResponse = await axios.get(
+        `https://services.leadconnectorhq.com/calendars/events/appointments?locationId=${LOCATION_ID}&startDate=${startDateStr}&endDate=${endDateStr}`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            Accept: 'application/json',
+            Version: '2021-04-15'
+          }
+        }
+      );
+
+      if (appointmentsResponse.data && appointmentsResponse.data.events) {
+        allAppointments.push(...appointmentsResponse.data.events);
+        console.log(`✅ Direct method: Found ${appointmentsResponse.data.events.length} appointments`);
+      }
+    } catch (directErr) {
+      console.log('⚠️ Direct appointments endpoint failed:', directErr.response?.data || directErr.message);
+      
+      // Approach 2: Fallback - Get all contacts and their appointments
+      console.log('🔄 Falling back to contacts approach...');
+      
+      const allContacts = [];
+      let hasMore = true;
+      let contactSkip = 0;
+      const contactLimit = 100;
+
+      while (hasMore) {
         try {
-          const appointmentResponse = await axios.get(
-            `https://services.leadconnectorhq.com/contacts/${contact.id}/appointments`,
+          const contactsResponse = await axios.get(
+            `https://services.leadconnectorhq.com/contacts/?locationId=${LOCATION_ID}&limit=${contactLimit}&skip=${contactSkip}`,
             {
               headers: {
                 Authorization: `Bearer ${accessToken}`,
@@ -99,37 +112,69 @@ exports.handler = async function (event) {
             }
           );
 
-          const appointments = appointmentResponse.data.appointments || [];
+          const contacts = contactsResponse.data.contacts || [];
+          allContacts.push(...contacts);
           
-          // Add contact info to each appointment
-          return appointments.map(appointment => ({
-            ...appointment,
-            contactInfo: {
-              id: contact.id,
-              name: contact.name,
-              firstName: contact.firstName,
-              lastName: contact.lastName,
-              email: contact.email,
-              phone: contact.phone
-            }
-          }));
+          if (contacts.length < contactLimit) {
+            hasMore = false;
+          } else {
+            contactSkip += contactLimit;
+            await delay(100);
+          }
         } catch (err) {
-          console.warn(`⚠️ Failed to fetch appointments for contact ${contact.id}:`, err.message);
-          return [];
+          console.error('❌ Error fetching contacts:', err.response?.data || err.message);
+          hasMore = false;
         }
-      });
+      }
 
-      const chunkResults = await Promise.allSettled(appointmentPromises);
-      
-      // Flatten and add successful results
-      chunkResults.forEach(result => {
-        if (result.status === 'fulfilled') {
-          allAppointments.push(...result.value);
-        }
-      });
+      console.log(`📞 Found ${allContacts.length} contacts, fetching their appointments...`);
 
-      // Add delay to avoid rate limiting
-      await delay(100);
+      // Get appointments for each contact
+      const contactChunks = chunkArray(allContacts, 10);
+
+      for (const chunk of contactChunks) {
+        const appointmentPromises = chunk.map(async (contact) => {
+          try {
+            const appointmentResponse = await axios.get(
+              `https://services.leadconnectorhq.com/contacts/${contact.id}/appointments`,
+              {
+                headers: {
+                  Authorization: `Bearer ${accessToken}`,
+                  Accept: 'application/json',
+                  Version: '2021-07-28'
+                }
+              }
+            );
+
+            const appointments = appointmentResponse.data.appointments || [];
+            
+            return appointments.map(appointment => ({
+              ...appointment,
+              contactInfo: {
+                id: contact.id,
+                name: contact.name,
+                firstName: contact.firstName,
+                lastName: contact.lastName,
+                email: contact.email,
+                phone: contact.phone
+              }
+            }));
+          } catch (err) {
+            console.warn(`⚠️ Failed to fetch appointments for contact ${contact.id}:`, err.message);
+            return [];
+          }
+        });
+
+        const chunkResults = await Promise.allSettled(appointmentPromises);
+        
+        chunkResults.forEach(result => {
+          if (result.status === 'fulfilled') {
+            allAppointments.push(...result.value);
+          }
+        });
+
+        await delay(100);
+      }
     }
 
     console.log(`📊 Total appointments found: ${allAppointments.length}`);
@@ -176,9 +221,10 @@ exports.handler = async function (event) {
           limit: parseInt(limit)
         },
         meta: {
-          contactsProcessed: contacts.length,
+          calendarsFound: calendars.length,
           totalAppointments: allAppointments.length,
-          filteredAppointments: filteredAppointments.length
+          filteredAppointments: filteredAppointments.length,
+          method: allAppointments.length > 0 ? 'direct' : 'contacts_fallback'
         }
       })
     };
