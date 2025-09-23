@@ -59,37 +59,110 @@ exports.handler = async function (event) {
     console.log('📊 Fetching all appointments...');
     const allAppointments = [];
 
-    // Approach 1: Try to get appointments directly from calendars/events/appointments
-    try {
-      console.log('🔍 Trying direct appointments endpoint...');
+    // Try multiple approaches to get appointments
+    let methodUsed = 'none';
+
+    // Get all calendars for this location to use in appointments API
+    const calendarIds = calendars.map(cal => cal.id).filter(Boolean);
+    console.log(`📅 Calendar IDs found: ${calendarIds.join(', ')}`);
+
+    // Approach 1: Try the correct GHL appointments API endpoint
+    const approaches = [
+      // V1 API approach with calendar IDs
+      ...calendarIds.map(calendarId => ({
+        name: `ghl_v1_appointments_calendar_${calendarId}`,
+        url: () => {
+          const now = new Date();
+          const startDate = new Date(now.getFullYear() - 1, 0, 1); // Start from last year
+          const endDate = new Date(now.getFullYear() + 1, 11, 31); // Go to next year
+          const startEpoch = Math.floor(startDate.getTime());
+          const endEpoch = Math.floor(endDate.getTime());
+          return `https://rest.gohighlevel.com/v1/appointments/?startDate=${startEpoch}&endDate=${endEpoch}&calendarId=${calendarId}&includeAll=true`;
+        },
+        version: null, // V1 API doesn't use version header
+        useLocationKey: true
+      })),
       
-      // Calculate date range (last 6 months to next 6 months)
-      const now = new Date();
-      const startDate = new Date(now);
-      startDate.setMonth(now.getMonth() - 6);
-      const endDate = new Date(now);
-      endDate.setMonth(now.getMonth() + 6);
+      // Original leadconnectorhq approaches as fallback
+      {
+        name: 'leadconnector_appointments_with_location_and_dates',
+        url: () => {
+          const now = new Date();
+          const startDate = new Date(now.getFullYear(), now.getMonth() - 6, 1);
+          const endDate = new Date(now.getFullYear(), now.getMonth() + 6, 1);
+          const startDateStr = startDate.toISOString().split('T')[0];
+          const endDateStr = endDate.toISOString().split('T')[0];
+          return `https://services.leadconnectorhq.com/calendars/events/appointments?locationId=${LOCATION_ID}&startDate=${startDateStr}&endDate=${endDateStr}`;
+        },
+        version: '2021-04-15',
+        useLocationKey: false
+      },
+      {
+        name: 'leadconnector_appointments_with_location_only',
+        url: () => `https://services.leadconnectorhq.com/calendars/events/appointments?locationId=${LOCATION_ID}`,
+        version: '2021-04-15',
+        useLocationKey: false
+      }
+    ];
 
-      const startDateStr = startDate.toISOString().split('T')[0];
-      const endDateStr = endDate.toISOString().split('T')[0];
+    for (const approach of approaches) {
+      try {
+        console.log(`🔍 Trying ${approach.name}...`);
+        const url = approach.url();
+        console.log(`📡 URL: ${url}`);
+        
+        // Prepare headers based on API type
+        const headers = {
+          Accept: 'application/json'
+        };
 
-      const appointmentsResponse = await axios.get(
-        `https://services.leadconnectorhq.com/calendars/events/appointments?locationId=${LOCATION_ID}&startDate=${startDateStr}&endDate=${endDateStr}`,
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            Accept: 'application/json',
-            Version: '2021-04-15'
+        if (approach.useLocationKey) {
+          // For V1 API, we might need location-specific API key instead of access token
+          // For now, let's try with the access token we have
+          headers.Authorization = `Bearer ${accessToken}`;
+        } else {
+          headers.Authorization = `Bearer ${accessToken}`;
+          if (approach.version) {
+            headers.Version = approach.version;
           }
         }
-      );
 
-      if (appointmentsResponse.data && appointmentsResponse.data.events) {
-        allAppointments.push(...appointmentsResponse.data.events);
-        console.log(`✅ Direct method: Found ${appointmentsResponse.data.events.length} appointments`);
+        const appointmentsResponse = await axios.get(url, { headers });
+
+        console.log(`📊 Response status: ${appointmentsResponse.status}`);
+        console.log(`📦 Response data keys:`, Object.keys(appointmentsResponse.data || {}));
+        
+        // Try different possible data structures
+        let appointments = [];
+        if (appointmentsResponse.data) {
+          if (appointmentsResponse.data.events) {
+            appointments = appointmentsResponse.data.events;
+          } else if (appointmentsResponse.data.appointments) {
+            appointments = appointmentsResponse.data.appointments;
+          } else if (Array.isArray(appointmentsResponse.data)) {
+            appointments = appointmentsResponse.data;
+          } else if (appointmentsResponse.data.data && Array.isArray(appointmentsResponse.data.data)) {
+            appointments = appointmentsResponse.data.data;
+          }
+        }
+
+        if (appointments && appointments.length > 0) {
+          allAppointments.push(...appointments);
+          methodUsed = approach.name;
+          console.log(`✅ ${approach.name}: Found ${appointments.length} appointments`);
+          break; // Stop trying other approaches if we found appointments
+        } else {
+          console.log(`⚠️ ${approach.name}: No appointments found in response`);
+        }
+      } catch (err) {
+        console.log(`❌ ${approach.name} failed:`, err.response?.status, err.response?.data || err.message);
       }
-    } catch (directErr) {
-      console.log('⚠️ Direct appointments endpoint failed:', directErr.response?.data || directErr.message);
+    }
+
+    // If no direct methods worked, try the contacts fallback
+    if (allAppointments.length === 0) {
+      console.log('🔄 All direct methods failed, trying contacts approach...');
+      methodUsed = 'contacts_fallback';
       
       // Approach 2: Fallback - Get all contacts and their appointments
       console.log('🔄 Falling back to contacts approach...');
@@ -224,7 +297,8 @@ exports.handler = async function (event) {
           calendarsFound: calendars.length,
           totalAppointments: allAppointments.length,
           filteredAppointments: filteredAppointments.length,
-          method: allAppointments.length > 0 ? 'direct' : 'contacts_fallback'
+          method: methodUsed,
+          locationId: LOCATION_ID
         }
       })
     };
