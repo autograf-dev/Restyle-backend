@@ -1,9 +1,8 @@
 const axios = require('axios');
-const { getValidAccessToken } = require('../../supbase'); // unified helper for token
+const { getValidAccessToken } = require('../../supbase');
 
 exports.handler = async function (event) {
   try {
-    // Get a valid access token
     const accessToken = await getValidAccessToken();
     if (!accessToken) {
       return {
@@ -16,13 +15,14 @@ exports.handler = async function (event) {
       };
     }
 
-    // Check if frontend sent a nextPageUrl
-    const { nextPageUrl } = event.queryStringParameters || {};
+    // Page param (default = 1)
+    const { page } = event.queryStringParameters || {};
+    const pageNum = parseInt(page) || 1;
 
-    // Default: first page
-    let url = nextPageUrl || `https://services.leadconnectorhq.com/contacts/?locationId=7LYI93XFo8j4nZfswlaz`;
+    // Base URL
+    let url = `https://services.leadconnectorhq.com/contacts/?locationId=7LYI93XFo8j4nZfswlaz&page=${pageNum}`;
 
-    // Fetch contacts
+    // Call LeadConnector API
     const response = await axios.get(url, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -30,6 +30,8 @@ exports.handler = async function (event) {
         Version: '2021-07-28'
       }
     });
+
+    const { contacts, meta } = response.data;
 
     return {
       statusCode: 200,
@@ -39,8 +41,11 @@ exports.handler = async function (event) {
       },
       body: JSON.stringify({
         message: '✅ Contacts fetched successfully',
-        contacts: response.data.contacts,
-        meta: response.data.meta // frontend ko aage nextPageUrl mil jaayega
+        page: meta.currentPage || pageNum,
+        total: meta.total,
+        nextPage: meta.nextPage,
+        prevPage: meta.prevPage,
+        contacts
       })
     };
 
