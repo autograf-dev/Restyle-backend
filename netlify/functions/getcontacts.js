@@ -1,11 +1,10 @@
 const axios = require('axios');
 const { getValidAccessToken } = require('../../supbase'); // unified helper for token
 
-exports.handler = async function () {
+exports.handler = async function (event) {
   try {
     // Get a valid access token
     const accessToken = await getValidAccessToken();
-
     if (!accessToken) {
       return {
         statusCode: 401,
@@ -17,17 +16,20 @@ exports.handler = async function () {
       };
     }
 
-    // Fetch contacts from LeadConnectorHQ
-    const response = await axios.get(
-      'https://services.leadconnectorhq.com/contacts/?locationId=7LYI93XFo8j4nZfswlaz',
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          Accept: 'application/json',
-          Version: '2021-07-28'
-        }
+    // Check if frontend sent a nextPageUrl
+    const { nextPageUrl } = event.queryStringParameters || {};
+
+    // Default: first page
+    let url = nextPageUrl || `https://services.leadconnectorhq.com/contacts/?locationId=7LYI93XFo8j4nZfswlaz`;
+
+    // Fetch contacts
+    const response = await axios.get(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/json',
+        Version: '2021-07-28'
       }
-    );
+    });
 
     return {
       statusCode: 200,
@@ -37,7 +39,8 @@ exports.handler = async function () {
       },
       body: JSON.stringify({
         message: '✅ Contacts fetched successfully',
-        contacts: response.data
+        contacts: response.data.contacts,
+        meta: response.data.meta // frontend ko aage nextPageUrl mil jaayega
       })
     };
 
