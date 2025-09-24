@@ -2,7 +2,7 @@ const axios = require("axios");
 const { getValidAccessToken } = require("../../supbase");
 const { saveBookingToDB } = require("../../supabaseAppointments");
 
-console.log("📅 bookAppointment function - updated 2025-09-24 debugging timezone issues");
+console.log("📅 bookAppointment function - updated 2025-08-27");
 
 exports.handler = async function (event) {
   try {
@@ -29,31 +29,6 @@ exports.handler = async function (event) {
       };
     }
 
-    // 🕐 CRITICAL DEBUG: Log all time-related data
-    console.log('🕐 === TIME DEBUG INFO ===');
-    console.log('🕐 Original startTime received:', startTime);
-    console.log('🕐 Original endTime received:', endTime);
-    console.log('🕐 startTime type:', typeof startTime);
-    console.log('🕐 endTime type:', typeof endTime);
-    
-    // Parse the times to understand their format
-    if (startTime) {
-      const startDate = new Date(startTime);
-      console.log('🕐 Parsed startTime as Date:', startDate);
-      console.log('🕐 StartTime in UTC:', startDate.toISOString());
-      console.log('🕐 StartTime in Denver:', startDate.toLocaleString('en-US', { timeZone: 'America/Denver' }));
-      console.log('🕐 StartTime in Edmonton:', startDate.toLocaleString('en-US', { timeZone: 'America/Edmonton' }));
-    }
-    
-    if (endTime) {
-      const endDate = new Date(endTime);
-      console.log('🕐 Parsed endTime as Date:', endDate);
-      console.log('🕐 EndTime in UTC:', endDate.toISOString());
-      console.log('🕐 EndTime in Denver:', endDate.toLocaleString('en-US', { timeZone: 'America/Denver' }));
-      console.log('🕐 EndTime in Edmonton:', endDate.toLocaleString('en-US', { timeZone: 'America/Edmonton' }));
-    }
-    console.log('🕐 === END TIME DEBUG ===');
-
     const payload = {
       title: title || "Booking from Restyle website",
       meetingLocationType: "custom",
@@ -67,11 +42,9 @@ exports.handler = async function (event) {
       calendarId,
       locationId: "7LYI93XFo8j4nZfswlaz",
       contactId,
-      startTime, // ✅ Use original time temporarily
-      endTime,   // ✅ Use original time temporarily
+      startTime,
+      endTime,
     };
-
-    console.log('📝 Payload being sent to API:', JSON.stringify(payload, null, 2));
 
     if (assignedUserId) {
       payload.assignedUserId = assignedUserId;
@@ -91,28 +64,13 @@ exports.handler = async function (event) {
     );
 
     const newBooking = response.data || null;
-    console.log("📅 Full API Response:", JSON.stringify(response.data, null, 2));
     console.log("📅 Extracted booking:", newBooking);
-    
-    // 🕐 Check if API response contains time fields
-    if (newBooking) {
-      console.log('🕐 === API RESPONSE TIME CHECK ===');
-      console.log('🕐 Response startTime:', newBooking.startTime);
-      console.log('🕐 Response endTime:', newBooking.endTime);
-      console.log('🕐 Response available fields:', Object.keys(newBooking));
-      console.log('🕐 === END API TIME CHECK ===');
-    }
 
     let dbInsert = null;
     try {
-      if (!newBooking) {
-        throw new Error("No booking data received from API");
+      if (!newBooking || !newBooking.id) {
+        throw new Error("Invalid booking data received from API");
       }
-      if (!newBooking.id) {
-        console.log("📅 Available fields in response:", Object.keys(newBooking));
-        throw new Error("No booking ID found in API response");
-      }
-      console.log("📅 Attempting to save booking with ID:", newBooking.id);
       dbInsert = await saveBookingToDB(newBooking);
     } catch (dbError) {
       console.error("❌ DB save failed:", dbError.message);

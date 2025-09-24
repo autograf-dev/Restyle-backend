@@ -28,8 +28,6 @@ exports.handler = async function (event) {
       };
     }
 
-    console.log('🕐 Received times - Start:', startTime, 'End:', endTime);
-
     // Base payload
     const payload = {
       title: "Booking from Restyle website",
