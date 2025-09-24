@@ -16,17 +16,21 @@ exports.handler = async function (event) {
     }
 
     // Single search param ?s=query
-    const { s } = event.queryStringParameters || {};
+    const { s, page, limit } = event.queryStringParameters || {};
 
-    // Required locationId
-    const locationId = '7LYI93XFo8j4nZfswlaz';
+    // Required fields
+    const locationId = '7LYI93XFo8j4nZfswlaz'; // replace with your actual locationId
+    const pageNum = parseInt(page) || 1;
+    const pageLimit = parseInt(limit) || 20; // default 20
 
-    // Build payload
-    const payload = { locationId };
+    const payload = {
+      locationId,
+      page: pageNum,
+      pageLimit
+    };
+
     if (s) {
-      payload.name = s;
-      payload.phone = s;
-      payload.email = s;
+      payload.query = s;
     }
 
     // POST to LeadConnector search endpoint
@@ -52,8 +56,10 @@ exports.handler = async function (event) {
       body: JSON.stringify({
         message: '✅ Contacts search successful',
         query: s || null,
-        results: response.data.contacts || [],
-        meta: response.data.meta || {}
+        page: pageNum,
+        limit: pageLimit,
+        total: response.data.total,
+        results: response.data.contacts || []
       })
     };
   } catch (err) {
