@@ -167,7 +167,6 @@ exports.handler = async function (event) {
       notes: notes || `Phone:- {{contact.phone}}\nEmail:- {{contact.email}}\n\nNeed to make a change to this event?\nReschedule:- {{reschedule_link}}\n\nCancel:- {{cancellation_link}}`,
       pixelId: "",
       formSubmitType: "ThankYouMessage",
-      formSubmitRedirectUrl: "",
       formSubmitThanksMessage: "Thank you for your appointment request. We will contact you shortly to confirm your request. Please call our office at {{contactMethod}} if you have any questions.",
       availabilities: [],
       guestType: "collect_detail",
