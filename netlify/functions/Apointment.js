@@ -29,6 +29,38 @@ exports.handler = async function (event) {
       };
     }
 
+    // 🕐 DEBUG: Log what we're sending to HighLevel
+    console.log('🕐 HighLevel API Debug - Frontend sent times:');
+    console.log('🕐 StartTime received:', startTime);
+    console.log('🕐 EndTime received:', endTime);
+    
+    // 🕐 HIGHLEVEL TIMEZONE FIX: Convert times to what HighLevel expects
+    function convertToHighLevelTime(timeString) {
+      if (!timeString) return timeString;
+      
+      console.log(`🕐 Original time received: ${timeString}`);
+      
+      // Parse the incoming time
+      const incomingDate = new Date(timeString);
+      console.log(`🕐 Parsed as Date: ${incomingDate.toString()}`);
+      console.log(`🕐 UTC representation: ${incomingDate.toISOString()}`);
+      
+      // If frontend sends UTC times but user selected Edmonton time,
+      // we need to adjust by adding the timezone offset to get the correct display time
+      const edmontonOffset = 6; // Edmonton is UTC-6 (MST) - add 6 hours to UTC to get correct display
+      const adjustedDate = new Date(incomingDate.getTime() + (edmontonOffset * 60 * 60 * 1000));
+      
+      console.log(`🕐 Adjusted for HighLevel: ${adjustedDate.toISOString()}`);
+      return adjustedDate.toISOString();
+    }
+    
+    const highlevelStartTime = convertToHighLevelTime(startTime);
+    const highlevelEndTime = convertToHighLevelTime(endTime);
+    
+    console.log('🕐 Final times for HighLevel API:');
+    console.log('🕐 StartTime for HighLevel:', highlevelStartTime);
+    console.log('🕐 EndTime for HighLevel:', highlevelEndTime);
+    
     const payload = {
       title: title || "Booking from Restyle website",
       meetingLocationType: "custom",
@@ -42,9 +74,11 @@ exports.handler = async function (event) {
       calendarId,
       locationId: "7LYI93XFo8j4nZfswlaz",
       contactId,
-      startTime,
-      endTime,
+      startTime: highlevelStartTime, // ✅ Use UTC time for HighLevel
+      endTime: highlevelEndTime,     // ✅ Use UTC time for HighLevel
     };
+
+    console.log('🕐 Final payload for HighLevel API:', JSON.stringify({ startTime: payload.startTime, endTime: payload.endTime }, null, 2));
 
     if (assignedUserId) {
       payload.assignedUserId = assignedUserId;
@@ -71,6 +105,7 @@ exports.handler = async function (event) {
       if (!newBooking || !newBooking.id) {
         throw new Error("Invalid booking data received from API");
       }
+      
       dbInsert = await saveBookingToDB(newBooking);
     } catch (dbError) {
       console.error("❌ DB save failed:", dbError.message);
