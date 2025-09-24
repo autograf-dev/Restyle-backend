@@ -1,9 +1,8 @@
 const axios = require("axios");
 const { getValidAccessToken } = require("../../supbase");
 const { saveBookingToDB } = require("../../supabaseAppointments");
-const { prepareAppointmentTimes } = require("../../timeUtils"); // ✅ Import time utilities
 
-console.log("📅 bookAppointment function - updated 2025-09-24 with timezone fix");
+console.log("📅 bookAppointment function - updated 2025-09-24 debugging timezone issues");
 
 exports.handler = async function (event) {
   try {
@@ -30,19 +29,9 @@ exports.handler = async function (event) {
       };
     }
 
-    // 🕐 CRITICAL FIX: Properly normalize appointment times to prevent timezone offset issues
-    let normalizedTimes;
-    try {
-      normalizedTimes = prepareAppointmentTimes(startTime, endTime);
-      console.log('✅ Successfully normalized appointment times:', normalizedTimes);
-    } catch (timeError) {
-      console.error('❌ Time normalization failed:', timeError.message);
-      return {
-        statusCode: 400,
-        headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
-        body: JSON.stringify({ error: "Invalid time format", details: timeError.message }),
-      };
-    }
+    // 🕐 TEMPORARY FIX: Debug logging to understand the time issue
+    console.log('🕐 Original startTime received:', startTime);
+    console.log('🕐 Original endTime received:', endTime);
 
     const payload = {
       title: title || "Booking from Restyle website",
@@ -57,9 +46,11 @@ exports.handler = async function (event) {
       calendarId,
       locationId: "7LYI93XFo8j4nZfswlaz",
       contactId,
-      startTime: normalizedTimes.startTime, // ✅ Use normalized time
-      endTime: normalizedTimes.endTime,     // ✅ Use normalized time
+      startTime, // ✅ Use original time temporarily
+      endTime,   // ✅ Use original time temporarily
     };
+
+    console.log('📝 Payload being sent to API:', JSON.stringify(payload, null, 2));
 
     if (assignedUserId) {
       payload.assignedUserId = assignedUserId;
@@ -79,13 +70,19 @@ exports.handler = async function (event) {
     );
 
     const newBooking = response.data || null;
+    console.log("📅 Full API Response:", JSON.stringify(response.data, null, 2));
     console.log("📅 Extracted booking:", newBooking);
 
     let dbInsert = null;
     try {
-      if (!newBooking || !newBooking.id) {
-        throw new Error("Invalid booking data received from API");
+      if (!newBooking) {
+        throw new Error("No booking data received from API");
       }
+      if (!newBooking.id) {
+        console.log("📅 Available fields in response:", Object.keys(newBooking));
+        throw new Error("No booking ID found in API response");
+      }
+      console.log("📅 Attempting to save booking with ID:", newBooking.id);
       dbInsert = await saveBookingToDB(newBooking);
     } catch (dbError) {
       console.error("❌ DB save failed:", dbError.message);
