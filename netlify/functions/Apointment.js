@@ -34,22 +34,14 @@ exports.handler = async function (event) {
     console.log('🕐 StartTime received:', startTime);
     console.log('🕐 EndTime received:', endTime);
     
-    // 🕐 HIGHLEVEL TIMEZONE FIX: Convert times to what HighLevel expects
+    // 🕐 DEBUG: Just pass through the time as-is for now
     function convertToHighLevelTime(timeString) {
       if (!timeString) return timeString;
       
       console.log(`🕐 Original time received: ${timeString}`);
+      console.log(`🕐 Passing through unchanged: ${timeString}`);
       
-      // Parse the incoming time
-      const incomingDate = new Date(timeString);
-      console.log(`🕐 Parsed as Date: ${incomingDate.toString()}`);
-      console.log(`🕐 UTC representation: ${incomingDate.toISOString()}`);
-      
-      // HighLevel shows 1 hour earlier, so we need to ADD 1 hour to compensate
-      const adjustedDate = new Date(incomingDate.getTime() + (1 * 60 * 60 * 1000)); // Add 1 hour
-      
-      console.log(`🕐 Adjusted for HighLevel (added 1 hour): ${adjustedDate.toISOString()}`);
-      return adjustedDate.toISOString();
+      return timeString;
     }
     
     const highlevelStartTime = convertToHighLevelTime(startTime);
