@@ -1,8 +1,9 @@
 const axios = require("axios");
 const { getValidAccessToken } = require("../../supbase");
 const { saveBookingToDB } = require("../../supabaseAppointments");
+const { prepareAppointmentTimes } = require("../../timeUtils"); // ✅ Import time utilities
 
-console.log("📅 bookAppointment function - updated 2025-08-27");
+console.log("📅 bookAppointment function - updated 2025-09-24 with timezone fix");
 
 exports.handler = async function (event) {
   try {
@@ -29,6 +30,20 @@ exports.handler = async function (event) {
       };
     }
 
+    // 🕐 CRITICAL FIX: Properly normalize appointment times to prevent timezone offset issues
+    let normalizedTimes;
+    try {
+      normalizedTimes = prepareAppointmentTimes(startTime, endTime);
+      console.log('✅ Successfully normalized appointment times:', normalizedTimes);
+    } catch (timeError) {
+      console.error('❌ Time normalization failed:', timeError.message);
+      return {
+        statusCode: 400,
+        headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
+        body: JSON.stringify({ error: "Invalid time format", details: timeError.message }),
+      };
+    }
+
     const payload = {
       title: title || "Booking from Restyle website",
       meetingLocationType: "custom",
@@ -42,8 +57,8 @@ exports.handler = async function (event) {
       calendarId,
       locationId: "7LYI93XFo8j4nZfswlaz",
       contactId,
-      startTime,
-      endTime,
+      startTime: normalizedTimes.startTime, // ✅ Use normalized time
+      endTime: normalizedTimes.endTime,     // ✅ Use normalized time
     };
 
     if (assignedUserId) {

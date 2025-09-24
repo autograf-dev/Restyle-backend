@@ -27,6 +27,12 @@ async function saveBookingToDB(booking) {
       address: booking.address || null,
       is_recurring: booking.isRecurring || false,
       trace_id: booking.traceId || null,
+      // ✅ Store the properly normalized appointment times
+      start_time: booking.startTime || null,
+      end_time: booking.endTime || null,
+      // Store additional timezone information for debugging
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     }
 
     console.log("🗂️ Mapped booking for DB:", JSON.stringify(mappedBooking, null, 2))

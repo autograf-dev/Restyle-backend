@@ -1,8 +1,9 @@
 const axios = require("axios");
 const { getValidAccessToken } = require("../../supbase");
 const { updateBookingInDB } = require("../../updatesupabasebooking");
+const { prepareAppointmentTimes } = require("../../timeUtils"); // ✅ Import time utilities
 
-console.log("✏️ updateAppointment function - created 2025-08-28");
+console.log("✏️ updateAppointment function - updated 2025-09-24 with timezone fix");
 
 exports.handler = async function (event) {
   try {
@@ -27,12 +28,28 @@ exports.handler = async function (event) {
       };
     }
 
-    // 📝 Start with user-provided fields
+    // 🕐 CRITICAL FIX: Normalize times if they are being updated
+    let normalizedTimes = null;
+    if (startTime && endTime) {
+      try {
+        normalizedTimes = prepareAppointmentTimes(startTime, endTime);
+        console.log('✅ Successfully normalized update times:', normalizedTimes);
+      } catch (timeError) {
+        console.error('❌ Time normalization failed during update:', timeError.message);
+        return {
+          statusCode: 400,
+          headers: { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" },
+          body: JSON.stringify({ error: "Invalid time format", details: timeError.message }),
+        };
+      }
+    }
+
+    // 📝 Start with user-provided fields - using normalized times if available
     const payload = {
       ...(title && { title }),
       ...(assignedUserId && { assignedUserId }),
-      ...(startTime && { startTime }),
-      ...(endTime && { endTime }),
+      ...(normalizedTimes ? { startTime: normalizedTimes.startTime } : startTime && { startTime }),
+      ...(normalizedTimes ? { endTime: normalizedTimes.endTime } : endTime && { endTime }),
       ...(calendarId && { calendarId }),
       ...(status && { appointmentStatus: status }),
     };
