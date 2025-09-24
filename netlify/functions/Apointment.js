@@ -45,12 +45,10 @@ exports.handler = async function (event) {
       console.log(`🕐 Parsed as Date: ${incomingDate.toString()}`);
       console.log(`🕐 UTC representation: ${incomingDate.toISOString()}`);
       
-      // If frontend sends UTC times but user selected Edmonton time,
-      // we need to adjust by adding the timezone offset to get the correct display time
-      const edmontonOffset = 6; // Edmonton is UTC-6 (MST) - add 6 hours to UTC to get correct display
-      const adjustedDate = new Date(incomingDate.getTime() + (edmontonOffset * 60 * 60 * 1000));
+      // HighLevel shows 1 hour earlier, so we need to ADD 1 hour to compensate
+      const adjustedDate = new Date(incomingDate.getTime() + (1 * 60 * 60 * 1000)); // Add 1 hour
       
-      console.log(`🕐 Adjusted for HighLevel: ${adjustedDate.toISOString()}`);
+      console.log(`🕐 Adjusted for HighLevel (added 1 hour): ${adjustedDate.toISOString()}`);
       return adjustedDate.toISOString();
     }
     
