@@ -1,7 +1,7 @@
 const axios = require('axios');
-const { getValidAccessToken } = require('../../supbase');
+const { getValidAccessToken } = require('../../supbase'); 
 
-console.log("📋 getServiceDetails function - updated 2025-09-24");
+console.log("📋 getAllServices function - updated 2025-09-24");
 
 exports.handler = async function (event) {
   const corsHeaders = {
@@ -26,21 +26,13 @@ exports.handler = async function (event) {
       };
     }
 
-    // Get service ID from query parameters
-    const serviceId = event.queryStringParameters?.id;
-    if (!serviceId) {
-      return {
-        statusCode: 400,
-        headers: corsHeaders,
-        body: JSON.stringify({ error: 'Missing serviceId in query string (?id=...)' })
-      };
-    }
+    const locationId = event.queryStringParameters?.locationId || '7LYI93XFo8j4nZfswlaz';
 
-    console.log('📋 Fetching service details for:', serviceId);
+    console.log('📋 Fetching all services/calendars for location:', locationId);
 
-    // Get service details via HighLevel API
+    // Fetch all calendars/services from HighLevel API
     const response = await axios.get(
-      `https://services.leadconnectorhq.com/calendars/${serviceId}`,
+      `https://services.leadconnectorhq.com/calendars/?locationId=${locationId}`,
       {
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -49,18 +41,26 @@ exports.handler = async function (event) {
       }
     );
 
-    console.log('✅ Service details retrieved successfully');
+    const calendars = response.data?.calendars || [];
+
+    console.log('📋 Retrieved services successfully:', calendars.length);
 
     return {
       statusCode: 200,
       headers: corsHeaders,
-      body: JSON.stringify(response.data)
+      body: JSON.stringify({
+        success: true,
+        locationId: locationId,
+        totalServices: calendars.length,
+        calendars: calendars,
+        services: calendars // alias for easier frontend consumption
+      })
     };
 
   } catch (err) {
     const status = err.response?.status || 500;
     const message = err.response?.data || err.message;
-    console.error("❌ Error fetching service details:", message);
+    console.error("❌ Error fetching all services:", message);
 
     return {
       statusCode: status,

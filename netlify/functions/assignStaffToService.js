@@ -15,15 +15,6 @@ exports.handler = async function (event) {
     return { statusCode: 200, headers: corsHeaders, body: '' };
   }
 
-  // Only allow POST requests
-  if (event.httpMethod !== 'POST') {
-    return {
-      statusCode: 405,
-      headers: corsHeaders,
-      body: JSON.stringify({ error: 'Method not allowed. Use POST.' })
-    };
-  }
-
   try {
     const accessToken = await getValidAccessToken();
 

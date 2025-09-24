@@ -1,7 +1,7 @@
 const axios = require('axios');
 const { getValidAccessToken } = require('../../supbase');
 
-console.log("🗑️ deleteService function - Service Management API");
+console.log("🗑️ deleteService function - updated 2025-09-24");
 
 exports.handler = async function (event) {
   const corsHeaders = {
@@ -13,15 +13,6 @@ exports.handler = async function (event) {
   // ✅ Handle preflight request
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers: corsHeaders, body: '' };
-  }
-
-  // Only allow DELETE requests
-  if (event.httpMethod !== 'DELETE') {
-    return {
-      statusCode: 405,
-      headers: corsHeaders,
-      body: JSON.stringify({ error: 'Method not allowed. Use DELETE.' })
-    };
   }
 
   try {
@@ -47,24 +38,6 @@ exports.handler = async function (event) {
 
     console.log('🗑️ Deleting service:', serviceId);
 
-    // First, get service details for logging
-    let serviceDetails = null;
-    try {
-      const serviceResponse = await axios.get(
-        `https://services.leadconnectorhq.com/calendars/${serviceId}`,
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            Version: '2021-04-15'
-          }
-        }
-      );
-      serviceDetails = serviceResponse.data;
-      console.log('🗑️ Service to delete:', serviceDetails.name);
-    } catch (getErr) {
-      console.warn('⚠️ Could not fetch service details before deletion:', getErr.message);
-    }
-
     // Delete service via HighLevel API
     const response = await axios.delete(
       `https://services.leadconnectorhq.com/calendars/${serviceId}`,
@@ -81,12 +54,7 @@ exports.handler = async function (event) {
     return {
       statusCode: 200,
       headers: corsHeaders,
-      body: JSON.stringify({
-        success: true,
-        message: 'Service deleted successfully',
-        serviceId: serviceId,
-        deletedService: serviceDetails?.name || 'Unknown Service'
-      })
+      body: JSON.stringify(response.data)
     };
 
   } catch (err) {

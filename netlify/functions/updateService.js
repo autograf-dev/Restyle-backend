@@ -1,7 +1,7 @@
 const axios = require('axios');
 const { getValidAccessToken } = require('../../supbase');
 
-console.log("✏️ updateService function - Service Management API");
+console.log("✏️ updateService function - updated 2025-09-24");
 
 exports.handler = async function (event) {
   const corsHeaders = {
@@ -13,15 +13,6 @@ exports.handler = async function (event) {
   // ✅ Handle preflight request
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers: corsHeaders, body: '' };
-  }
-
-  // Only allow PUT requests
-  if (event.httpMethod !== 'PUT') {
-    return {
-      statusCode: 405,
-      headers: corsHeaders,
-      body: JSON.stringify({ error: 'Method not allowed. Use PUT.' })
-    };
   }
 
   try {
@@ -47,33 +38,13 @@ exports.handler = async function (event) {
 
     // Parse request body with updates
     const body = JSON.parse(event.body || '{}');
-    const updates = { ...body };
 
-    console.log('✏️ Updating service:', serviceId, 'with data:', JSON.stringify(updates, null, 2));
-
-    // Get current service data first
-    const currentService = await axios.get(
-      `https://services.leadconnectorhq.com/calendars/${serviceId}`,
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          Version: '2021-04-15'
-        }
-      }
-    );
-
-    // Merge current data with updates
-    const updatedPayload = {
-      ...currentService.data,
-      ...updates,
-      // Ensure these fields are properly formatted if provided
-      slug: updates.name ? updates.name.toLowerCase().replace(/[^a-z0-9]/g, '-') : currentService.data.slug,
-    };
+    console.log('✏️ Updating service:', serviceId);
 
     // Update service via HighLevel API
     const response = await axios.put(
       `https://services.leadconnectorhq.com/calendars/${serviceId}`,
-      updatedPayload,
+      body,
       {
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -83,18 +54,12 @@ exports.handler = async function (event) {
       }
     );
 
-    console.log('✅ Service updated successfully:', response.data);
+    console.log('✅ Service updated successfully');
 
     return {
       statusCode: 200,
       headers: corsHeaders,
-      body: JSON.stringify({
-        success: true,
-        message: 'Service updated successfully',
-        service: response.data,
-        serviceId: serviceId,
-        updatedFields: Object.keys(updates)
-      })
+      body: JSON.stringify(response.data)
     };
 
   } catch (err) {
@@ -105,11 +70,7 @@ exports.handler = async function (event) {
     return {
       statusCode: status,
       headers: corsHeaders,
-      body: JSON.stringify({ 
-        error: 'Failed to update service',
-        details: message,
-        success: false
-      })
+      body: JSON.stringify({ error: message })
     };
   }
 };
