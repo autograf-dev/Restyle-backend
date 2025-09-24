@@ -17,8 +17,12 @@ exports.handler = async function (event) {
 
     // Single search param ?s=query
     const { s } = event.queryStringParameters || {};
-    const payload = {};
 
+    // Required locationId
+    const locationId = '7LYI93XFo8j4nZfswlaz';
+
+    // Build payload
+    const payload = { locationId };
     if (s) {
       payload.name = s;
       payload.phone = s;
