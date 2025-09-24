@@ -29,9 +29,30 @@ exports.handler = async function (event) {
       };
     }
 
-    // 🕐 TEMPORARY FIX: Debug logging to understand the time issue
+    // 🕐 CRITICAL DEBUG: Log all time-related data
+    console.log('🕐 === TIME DEBUG INFO ===');
     console.log('🕐 Original startTime received:', startTime);
     console.log('🕐 Original endTime received:', endTime);
+    console.log('🕐 startTime type:', typeof startTime);
+    console.log('🕐 endTime type:', typeof endTime);
+    
+    // Parse the times to understand their format
+    if (startTime) {
+      const startDate = new Date(startTime);
+      console.log('🕐 Parsed startTime as Date:', startDate);
+      console.log('🕐 StartTime in UTC:', startDate.toISOString());
+      console.log('🕐 StartTime in Denver:', startDate.toLocaleString('en-US', { timeZone: 'America/Denver' }));
+      console.log('🕐 StartTime in Edmonton:', startDate.toLocaleString('en-US', { timeZone: 'America/Edmonton' }));
+    }
+    
+    if (endTime) {
+      const endDate = new Date(endTime);
+      console.log('🕐 Parsed endTime as Date:', endDate);
+      console.log('🕐 EndTime in UTC:', endDate.toISOString());
+      console.log('🕐 EndTime in Denver:', endDate.toLocaleString('en-US', { timeZone: 'America/Denver' }));
+      console.log('🕐 EndTime in Edmonton:', endDate.toLocaleString('en-US', { timeZone: 'America/Edmonton' }));
+    }
+    console.log('🕐 === END TIME DEBUG ===');
 
     const payload = {
       title: title || "Booking from Restyle website",
@@ -72,6 +93,15 @@ exports.handler = async function (event) {
     const newBooking = response.data || null;
     console.log("📅 Full API Response:", JSON.stringify(response.data, null, 2));
     console.log("📅 Extracted booking:", newBooking);
+    
+    // 🕐 Check if API response contains time fields
+    if (newBooking) {
+      console.log('🕐 === API RESPONSE TIME CHECK ===');
+      console.log('🕐 Response startTime:', newBooking.startTime);
+      console.log('🕐 Response endTime:', newBooking.endTime);
+      console.log('🕐 Response available fields:', Object.keys(newBooking));
+      console.log('🕐 === END API TIME CHECK ===');
+    }
 
     let dbInsert = null;
     try {
