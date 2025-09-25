@@ -317,7 +317,14 @@ exports.handler = async function (event) {
           barberWeekendIndexes,
           barberHoursMap,
           timeOffList,
-          timeBlockList
+          timeBlockList,
+          debugVersion: "2.1",
+          timeBlockDebug: timeBlockList.map(block => ({
+            ...block,
+            recurringDaysType: typeof block.recurringDays,
+            recurringDaysLength: block.recurringDays ? block.recurringDays.length : 0,
+            fieldNames: Object.keys(block)
+          }))
         } : undefined
       })
     };
