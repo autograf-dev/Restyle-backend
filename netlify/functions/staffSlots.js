@@ -20,15 +20,16 @@ async function fetchWithRetry(url, headers, retries = 3, delay = 500) {
   }
 }
 
+// Convert "01:30 PM" => minutes since midnight
 function timeToMinutes(timeString) {
   const [time, modifier] = timeString.split(" ");
   let [hours, minutes] = time.split(":").map(Number);
-
   if (modifier === "PM" && hours !== 12) hours += 12;
   if (modifier === "AM" && hours === 12) hours = 0;
   return hours * 60 + minutes;
 }
 
+// Check if minutes falls in a range
 function isWithinRange(minutes, start, end) {
   return minutes >= start && minutes <= end;
 }
@@ -55,7 +56,6 @@ exports.handler = async function (event) {
     }
 
     const { calendarId, userId, date } = event.queryStringParameters || {};
-
     if (!calendarId) {
       return {
         statusCode: 400,
@@ -105,7 +105,7 @@ exports.handler = async function (event) {
       businessHoursMap[item.day_of_week] = item;
     });
 
-    // Fetch barber hours
+    // Barber hours
     let barberHoursMap = {};
     let barberWeekends = [];
     let barberWeekendIndexes = [];
@@ -118,7 +118,6 @@ exports.handler = async function (event) {
         .single();
       if (barberError) throw new Error("Failed to fetch barber hours");
 
-      // Parse weekend_days
       if (barberData.weekend_days) {
         try {
           let weekendString = barberData.weekend_days.replace(/^['"]|['"]$/g, '');
@@ -146,7 +145,7 @@ exports.handler = async function (event) {
       };
     }
 
-    // Fetch time off
+    // Time off
     let timeOffList = [];
     if (userId) {
       const { data: timeOffData } = await supabase.from("time_off").select("*").eq("ghl_id", userId);
@@ -164,155 +163,77 @@ exports.handler = async function (event) {
       return false;
     };
 
-    // Fetch time blocks
+    // Time blocks
     let timeBlockList = [];
     if (userId) {
       const { data: blockData } = await supabase.from("time_block").select("*").eq("ghl_id", userId);
-      console.log(`🔍 Fetched ${blockData?.length || 0} time blocks for user ${userId}`);
-      
       timeBlockList = (blockData || []).map(item => {
-        // Handle the recurring field which might have quotes around "true"
         const recurringRaw = item["Block/Recurring"];
         const recurring = recurringRaw === true || 
-                         recurringRaw === "true" || 
-                         recurringRaw === "\"true\"" ||
-                         String(recurringRaw).toLowerCase().replace(/['"]/g, '') === "true";
-        
-        let recurringDays = [];
-        
-        if (recurring && item["Block/Recurring Day"]) {
-          // Parse comma-separated days like "Friday,Saturday,Monday,Wednesday,Thursday,Tuesday,Sunday"
-          recurringDays = item["Block/Recurring Day"].split(',').map(day => day.trim());
-        }
-        
-        const block = {
+                          recurringRaw === "true" || 
+                          recurringRaw === "\"true\"" ||
+                          String(recurringRaw).toLowerCase().replace(/['"]/g, '') === "true";
+        const recurringDays = recurring && item["Block/Recurring Day"]
+          ? item["Block/Recurring Day"].split(',').map(d => d.trim())
+          : [];
+        return {
           start: parseInt(item["Block/Start"]),
           end: parseInt(item["Block/End"]),
-          date: item["Block/Date"] ? item["Block/Date"] : null,
-          recurring: recurring,
-          recurringDays: recurringDays,
+          date: item["Block/Date"] || null,
+          recurring,
+          recurringDays,
           name: item["Block/Name"] || "Time Block",
-          // Force deployment update - VERSION 3.0
           version: "3.0"
         };
-        
-        console.log(`📅 Time block: ${block.name}, recurring: ${block.recurring} (raw: ${recurringRaw}), days: [${block.recurringDays.join(',')}], array length: ${block.recurringDays.length}, time: ${block.start}-${block.end} minutes`);
-        console.log(`📅 Full block object:`, JSON.stringify(block, null, 2));
-        return block;
       });
     }
 
     const isSlotBlocked = (slotDate, slotMinutes) => {
+      const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+      const currentDayName = dayNames[slotDate.getDay()];
+
       for (const block of timeBlockList) {
-        if (block.recurring) {
-          // Check if current day matches any of the recurring days
-          const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-          const currentDayName = dayNames[slotDate.getDay()];
-          
-          // Handle both field names for backward compatibility
-          let recurringDaysList = block.recurringDays || block.recurringDay;
-          
-          // If it's a string, split it into an array
-          if (typeof recurringDaysList === 'string') {
-            recurringDaysList = recurringDaysList.split(',').map(day => day.trim());
-          }
-          
-          if (recurringDaysList && recurringDaysList.includes(currentDayName)) {
-            if (isWithinRange(slotMinutes, block.start, block.end)) {
-              console.log(`🚫 Slot blocked by recurring time_block: ${block.name} on ${currentDayName} at ${slotMinutes} minutes`);
-              return true;
-            }
-          }
+        if (block.recurring && block.recurringDays.includes(currentDayName)) {
+          if (isWithinRange(slotMinutes, block.start, block.end)) return true;
         } else if (block.date) {
-          // Parse the block date properly
-          let blockDate;
-          try {
-            const blockDateStr = block.date;
-            if (blockDateStr.includes(',')) {
-              // Format: '9/26/2025, 6:30:00 PM'
-              const [datePart] = blockDateStr.split(',');
-              const [month, day, year] = datePart.trim().split('/');
-              blockDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-            } else {
-              blockDate = new Date(blockDateStr);
-            }
-            
-            const blockDateOnly = new Date(blockDate.getFullYear(), blockDate.getMonth(), blockDate.getDate());
-            const currDateOnly = new Date(slotDate.getFullYear(), slotDate.getMonth(), slotDate.getDate());
-            
-            if (blockDateOnly.getTime() === currDateOnly.getTime() && isWithinRange(slotMinutes, block.start, block.end)) {
-              console.log(`Slot blocked by specific time_block: ${block.name} on ${blockDateOnly.toDateString()}`);
-              return true;
-            }
-          } catch (e) {
-            console.warn(`Invalid time_block date format:`, block.date, e.message);
-          }
+          const blockDate = new Date(block.date);
+          const blockDateOnly = new Date(blockDate.getFullYear(), blockDate.getMonth(), blockDate.getDate());
+          const slotDateOnly = new Date(slotDate.getFullYear(), slotDate.getMonth(), slotDate.getDate());
+          if (blockDateOnly.getTime() === slotDateOnly.getTime() && isWithinRange(slotMinutes, block.start, block.end)) return true;
         }
       }
       return false;
     };
 
+    // Filter slots
     const filteredSlots = {};
     for (const day of daysToCheck) {
       const dateKey = day.toISOString().split("T")[0];
       const dayOfWeek = day.getDay();
-
       const bh = businessHoursMap[dayOfWeek];
       if (!bh) continue;
-      const openTime = bh.open_time;
-      const closeTime = bh.close_time;
 
       let validSlots = slotsData[dateKey]?.slots || [];
 
       validSlots = validSlots.filter(slot => {
-        const timeString = new Date(slot).toLocaleString("en-US", {
-          timeZone: "America/Denver",
-          hour: "2-digit",
-          minute: "2-digit",
-          hour12: true
-        });
-        const minutes = timeToMinutes(timeString);
-        return isWithinRange(minutes, openTime, closeTime);
+        const minutes = timeToMinutes(slot);
+        return isWithinRange(minutes, bh.open_time, bh.close_time);
       });
 
       if (userId) {
-        // Skip barber weekend
         if (barberWeekendIndexes.includes(dayOfWeek)) continue;
-
         const barberHours = barberHoursMap[dayOfWeek];
         if (!barberHours || (barberHours.start === 0 && barberHours.end === 0)) continue;
-
         if (isDateInTimeOff(day)) continue;
 
         validSlots = validSlots.filter(slot => {
-          const timeString = new Date(slot).toLocaleString("en-US", {
-            timeZone: "America/Denver",
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: true
-          });
-          const minutes = timeToMinutes(timeString);
-          const isBlocked = isSlotBlocked(day, minutes);
-          
-          if (isBlocked) {
-            console.log(`🚫 Blocked slot: ${timeString} (${minutes} minutes) on ${day.toDateString()}`);
-          }
-          
-          return isWithinRange(minutes, barberHours.start, barberHours.end) && !isBlocked;
+          const minutes = timeToMinutes(slot);
+          return isWithinRange(minutes, barberHours.start, barberHours.end) && !isSlotBlocked(day, minutes);
         });
       }
 
-      if (validSlots.length > 0) {
-        filteredSlots[dateKey] = validSlots.map(slot => new Date(slot).toLocaleString("en-US", {
-          timeZone: "America/Denver",
-          hour: "2-digit",
-          minute: "2-digit",
-          hour12: true
-        }));
-      }
+      if (validSlots.length > 0) filteredSlots[dateKey] = validSlots;
     }
-
-    console.log(`📊 Final results: ${Object.keys(filteredSlots).length} days with slots, ${timeBlockList.length} time blocks processed - VERSION 3.0 - RECURRING BLOCKS FIXED`);
 
     return {
       statusCode: 200,
@@ -328,13 +249,7 @@ exports.handler = async function (event) {
           barberHoursMap,
           timeOffList,
           timeBlockList,
-          debugVersion: "3.0 - RECURRING BLOCKS FIXED",
-          timeBlockDebug: timeBlockList.map(block => ({
-            ...block,
-            recurringDaysType: typeof block.recurringDays,
-            recurringDaysLength: block.recurringDays ? block.recurringDays.length : 0,
-            fieldNames: Object.keys(block)
-          }))
+          debugVersion: "3.0 - RECURRING BLOCKS FIXED"
         } : undefined
       })
     };
