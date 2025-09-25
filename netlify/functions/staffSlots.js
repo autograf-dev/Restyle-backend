@@ -171,11 +171,17 @@ exports.handler = async function (event) {
       console.log(`🔍 Fetched ${blockData?.length || 0} time blocks for user ${userId}`);
       
       timeBlockList = (blockData || []).map(item => {
-        const recurring = item["Block/Recurring"] === true || item["Block/Recurring"] === "true";
+        // Handle the recurring field which might have quotes around "true"
+        const recurringRaw = item["Block/Recurring"];
+        const recurring = recurringRaw === true || 
+                         recurringRaw === "true" || 
+                         recurringRaw === "\"true\"" ||
+                         String(recurringRaw).toLowerCase().replace(/['"]/g, '') === "true";
+        
         let recurringDays = [];
         
         if (recurring && item["Block/Recurring Day"]) {
-          // Parse comma-separated days like "Thursday,Wednesday,Tuesday,Monday"
+          // Parse comma-separated days like "Friday,Saturday,Monday,Wednesday,Thursday,Tuesday,Sunday"
           recurringDays = item["Block/Recurring Day"].split(',').map(day => day.trim());
         }
         
@@ -188,7 +194,7 @@ exports.handler = async function (event) {
           name: item["Block/Name"] || "Time Block"
         };
         
-        console.log(`📅 Time block: ${block.name}, recurring: ${block.recurring}, days: ${block.recurringDays.join(',')}, time: ${block.start}-${block.end} minutes`);
+        console.log(`📅 Time block: ${block.name}, recurring: ${block.recurring} (raw: ${recurringRaw}), days: ${block.recurringDays.join(',')}, time: ${block.start}-${block.end} minutes`);
         return block;
       });
     }
