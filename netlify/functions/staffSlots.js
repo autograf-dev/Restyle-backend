@@ -194,7 +194,8 @@ exports.handler = async function (event) {
           name: item["Block/Name"] || "Time Block"
         };
         
-        console.log(`📅 Time block: ${block.name}, recurring: ${block.recurring} (raw: ${recurringRaw}), days: ${block.recurringDays.join(',')}, time: ${block.start}-${block.end} minutes`);
+        console.log(`📅 Time block: ${block.name}, recurring: ${block.recurring} (raw: ${recurringRaw}), days: [${block.recurringDays.join(',')}], array length: ${block.recurringDays.length}, time: ${block.start}-${block.end} minutes`);
+        console.log(`📅 Full block object:`, JSON.stringify(block, null, 2));
         return block;
       });
     }
