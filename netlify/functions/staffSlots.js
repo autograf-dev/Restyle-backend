@@ -168,26 +168,63 @@ exports.handler = async function (event) {
     let timeBlockList = [];
     if (userId) {
       const { data: blockData } = await supabase.from("time_block").select("*").eq("ghl_id", userId);
-      timeBlockList = (blockData || []).map(item => ({
-        start: parseInt(item["Block/Start"]),
-        end: parseInt(item["Block/End"]),
-        date: item["Block/Date"] ? new Date(item["Block/Date"]) : null,
-        recurring: item["Block/Recurring"] === true || item["Block/Recurring"] === "true",
-        recurringDay: item["Block/Recurring Day"]
-      }));
+      timeBlockList = (blockData || []).map(item => {
+        const recurring = item["Block/Recurring"] === true || item["Block/Recurring"] === "true";
+        let recurringDays = [];
+        
+        if (recurring && item["Block/Recurring Day"]) {
+          // Parse comma-separated days like "Thursday,Wednesday,Tuesday,Monday"
+          recurringDays = item["Block/Recurring Day"].split(',').map(day => day.trim());
+        }
+        
+        return {
+          start: parseInt(item["Block/Start"]),
+          end: parseInt(item["Block/End"]),
+          date: item["Block/Date"] ? item["Block/Date"] : null,
+          recurring: recurring,
+          recurringDays: recurringDays,
+          name: item["Block/Name"] || "Time Block"
+        };
+      });
     }
 
     const isSlotBlocked = (slotDate, slotMinutes) => {
       for (const block of timeBlockList) {
         if (block.recurring) {
-          const dayNameToIndex = { "Sunday":0,"Monday":1,"Tuesday":2,"Wednesday":3,"Thursday":4,"Friday":5,"Saturday":6 };
-          if (dayNameToIndex[block.recurringDay] === slotDate.getDay()) {
-            if (isWithinRange(slotMinutes, block.start, block.end)) return true;
+          // Check if current day matches any of the recurring days
+          const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+          const currentDayName = dayNames[slotDate.getDay()];
+          
+          if (block.recurringDays.includes(currentDayName)) {
+            if (isWithinRange(slotMinutes, block.start, block.end)) {
+              console.log(`Slot blocked by recurring time_block: ${block.name} on ${currentDayName}`);
+              return true;
+            }
           }
         } else if (block.date) {
-          const blockDate = new Date(block.date.getFullYear(), block.date.getMonth(), block.date.getDate());
-          const currDate = new Date(slotDate.getFullYear(), slotDate.getMonth(), slotDate.getDate());
-          if (+blockDate === +currDate && isWithinRange(slotMinutes, block.start, block.end)) return true;
+          // Parse the block date properly
+          let blockDate;
+          try {
+            const blockDateStr = block.date;
+            if (blockDateStr.includes(',')) {
+              // Format: '9/26/2025, 6:30:00 PM'
+              const [datePart] = blockDateStr.split(',');
+              const [month, day, year] = datePart.trim().split('/');
+              blockDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+            } else {
+              blockDate = new Date(blockDateStr);
+            }
+            
+            const blockDateOnly = new Date(blockDate.getFullYear(), blockDate.getMonth(), blockDate.getDate());
+            const currDateOnly = new Date(slotDate.getFullYear(), slotDate.getMonth(), slotDate.getDate());
+            
+            if (blockDateOnly.getTime() === currDateOnly.getTime() && isWithinRange(slotMinutes, block.start, block.end)) {
+              console.log(`Slot blocked by specific time_block: ${block.name} on ${blockDateOnly.toDateString()}`);
+              return true;
+            }
+          } catch (e) {
+            console.warn(`Invalid time_block date format:`, block.date, e.message);
+          }
         }
       }
       return false;
