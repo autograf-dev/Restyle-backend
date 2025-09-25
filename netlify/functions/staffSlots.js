@@ -191,7 +191,9 @@ exports.handler = async function (event) {
           date: item["Block/Date"] ? item["Block/Date"] : null,
           recurring: recurring,
           recurringDays: recurringDays,
-          name: item["Block/Name"] || "Time Block"
+          name: item["Block/Name"] || "Time Block",
+          // Force deployment update - VERSION 3.0
+          version: "3.0"
         };
         
         console.log(`📅 Time block: ${block.name}, recurring: ${block.recurring} (raw: ${recurringRaw}), days: [${block.recurringDays.join(',')}], array length: ${block.recurringDays.length}, time: ${block.start}-${block.end} minutes`);
@@ -207,9 +209,17 @@ exports.handler = async function (event) {
           const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
           const currentDayName = dayNames[slotDate.getDay()];
           
-          if (block.recurringDays.includes(currentDayName)) {
+          // Handle both field names for backward compatibility
+          let recurringDaysList = block.recurringDays || block.recurringDay;
+          
+          // If it's a string, split it into an array
+          if (typeof recurringDaysList === 'string') {
+            recurringDaysList = recurringDaysList.split(',').map(day => day.trim());
+          }
+          
+          if (recurringDaysList && recurringDaysList.includes(currentDayName)) {
             if (isWithinRange(slotMinutes, block.start, block.end)) {
-              console.log(`Slot blocked by recurring time_block: ${block.name} on ${currentDayName}`);
+              console.log(`🚫 Slot blocked by recurring time_block: ${block.name} on ${currentDayName} at ${slotMinutes} minutes`);
               return true;
             }
           }
@@ -302,7 +312,7 @@ exports.handler = async function (event) {
       }
     }
 
-    console.log(`📊 Final results: ${Object.keys(filteredSlots).length} days with slots, ${timeBlockList.length} time blocks processed - VERSION 2.0`);
+    console.log(`📊 Final results: ${Object.keys(filteredSlots).length} days with slots, ${timeBlockList.length} time blocks processed - VERSION 3.0 - RECURRING BLOCKS FIXED`);
 
     return {
       statusCode: 200,
@@ -318,7 +328,7 @@ exports.handler = async function (event) {
           barberHoursMap,
           timeOffList,
           timeBlockList,
-          debugVersion: "2.1",
+          debugVersion: "3.0 - RECURRING BLOCKS FIXED",
           timeBlockDebug: timeBlockList.map(block => ({
             ...block,
             recurringDaysType: typeof block.recurringDays,
