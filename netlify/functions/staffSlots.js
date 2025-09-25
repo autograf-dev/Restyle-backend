@@ -168,6 +168,8 @@ exports.handler = async function (event) {
     let timeBlockList = [];
     if (userId) {
       const { data: blockData } = await supabase.from("time_block").select("*").eq("ghl_id", userId);
+      console.log(`🔍 Fetched ${blockData?.length || 0} time blocks for user ${userId}`);
+      
       timeBlockList = (blockData || []).map(item => {
         const recurring = item["Block/Recurring"] === true || item["Block/Recurring"] === "true";
         let recurringDays = [];
@@ -177,7 +179,7 @@ exports.handler = async function (event) {
           recurringDays = item["Block/Recurring Day"].split(',').map(day => day.trim());
         }
         
-        return {
+        const block = {
           start: parseInt(item["Block/Start"]),
           end: parseInt(item["Block/End"]),
           date: item["Block/Date"] ? item["Block/Date"] : null,
@@ -185,6 +187,9 @@ exports.handler = async function (event) {
           recurringDays: recurringDays,
           name: item["Block/Name"] || "Time Block"
         };
+        
+        console.log(`📅 Time block: ${block.name}, recurring: ${block.recurring}, days: ${block.recurringDays.join(',')}, time: ${block.start}-${block.end} minutes`);
+        return block;
       });
     }
 
@@ -270,7 +275,13 @@ exports.handler = async function (event) {
             hour12: true
           });
           const minutes = timeToMinutes(timeString);
-          return isWithinRange(minutes, barberHours.start, barberHours.end) && !isSlotBlocked(day, minutes);
+          const isBlocked = isSlotBlocked(day, minutes);
+          
+          if (isBlocked) {
+            console.log(`🚫 Blocked slot: ${timeString} (${minutes} minutes) on ${day.toDateString()}`);
+          }
+          
+          return isWithinRange(minutes, barberHours.start, barberHours.end) && !isBlocked;
         });
       }
 
@@ -283,6 +294,8 @@ exports.handler = async function (event) {
         }));
       }
     }
+
+    console.log(`📊 Final results: ${Object.keys(filteredSlots).length} days with slots, ${timeBlockList.length} time blocks processed`);
 
     return {
       statusCode: 200,
