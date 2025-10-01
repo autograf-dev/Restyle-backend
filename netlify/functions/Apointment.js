@@ -2,7 +2,7 @@ const axios = require("axios");
 const { getValidAccessToken } = require("../../supbase");
 const { saveBookingToDB } = require("../../supabaseAppointments");
 
-console.log("📅 bookAppointment function - updated 2025-08-27");
+console.log("📅 bookAppointment function - updated 2025-10-01");
 
 exports.handler = async function (event) {
   try {
@@ -17,7 +17,21 @@ exports.handler = async function (event) {
     }
 
     const params = event.queryStringParameters || {};
-    const { contactId, calendarId, assignedUserId, startTime, endTime, title } = params;
+    const { 
+      contactId, 
+      calendarId, 
+      assignedUserId, 
+      startTime, 
+      endTime, 
+      title,
+      // New enhanced parameters from frontend
+      serviceName,
+      servicePrice,
+      serviceDuration,
+      staffName,
+      customerFirstName,
+      customerLastName
+    } = params;
 
     if (!contactId || !calendarId || !startTime || !endTime) {
       return {
@@ -64,8 +78,8 @@ exports.handler = async function (event) {
       calendarId,
       locationId: "7LYI93XFo8j4nZfswlaz",
       contactId,
-      startTime: highlevelStartTime, // ✅ Use UTC time for HighLevel
-      endTime: highlevelEndTime,     // ✅ Use UTC time for HighLevel
+      startTime: highlevelStartTime,
+      endTime: highlevelEndTime,
     };
 
     console.log('🕐 Final payload for HighLevel API:', JSON.stringify({ startTime: payload.startTime, endTime: payload.endTime }, null, 2));
@@ -90,13 +104,28 @@ exports.handler = async function (event) {
     const newBooking = response.data || null;
     console.log("📅 Extracted booking:", newBooking);
 
+    // 📝 Prepare enhanced data for Supabase
+    const customerName = `${customerFirstName || ''} ${customerLastName || ''}`.trim() || null;
+    
+    const enhancedData = {
+      serviceName: serviceName || null,
+      servicePrice: servicePrice ? parseFloat(servicePrice) : null,
+      serviceDuration: serviceDuration ? parseInt(serviceDuration) : null,
+      staffName: staffName || null,
+      customerName: customerName,
+      paymentStatus: null, // Will be blank for now as requested
+    };
+
+    console.log("📝 Enhanced data to save:", JSON.stringify(enhancedData, null, 2));
+
     let dbInsert = null;
     try {
       if (!newBooking || !newBooking.id) {
         throw new Error("Invalid booking data received from API");
       }
       
-      dbInsert = await saveBookingToDB(newBooking);
+      // Pass enhanced data as second parameter
+      dbInsert = await saveBookingToDB(newBooking, enhancedData);
     } catch (dbError) {
       console.error("❌ DB save failed:", dbError.message);
       console.error("❌ Booking data that failed:", JSON.stringify(newBooking, null, 2));
@@ -106,7 +135,7 @@ exports.handler = async function (event) {
     // 🔗 Build website link for this contact
     const websiteUrl = `https://restyle-93b772.webflow.io/bookings?id=${contactId}`;
 
-    // 🌐 Call your own updatecustomer function to update contact’s website
+    // 🌐 Call your own updatecustomer function to update contact's website
     let websiteUpdate = null;
     try {
       const updateRes = await axios.get(

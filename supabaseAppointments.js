@@ -7,11 +7,13 @@ const supabase = createClient(supabaseUrl, supabaseKey)
 
 /**
  * Save or update a booking in Supabase
- * @param {Object} booking
+ * @param {Object} booking - The booking data from HighLevel API
+ * @param {Object} enhancedData - Additional data from frontend (service price, duration, names, etc.)
  */
-async function saveBookingToDB(booking) {
+async function saveBookingToDB(booking, enhancedData = {}) {
   try {
     console.log("📝 Attempting to save booking:", JSON.stringify(booking, null, 2))
+    console.log("📝 Enhanced data received:", JSON.stringify(enhancedData, null, 2))
 
     // Ensure the referenced contact exists to satisfy FK constraint
     await ensureContactExists(booking.contactId)
@@ -22,6 +24,7 @@ async function saveBookingToDB(booking) {
       computedDuration = Math.round((new Date(booking.endTime) - new Date(booking.startTime)) / (1000 * 60))
     }
 
+    // Use enhanced data if provided, otherwise fall back to computed/booking values
     const mappedBooking = {
       id: booking.id,
       calendar_id: booking.calendarId || null,
@@ -33,13 +36,20 @@ async function saveBookingToDB(booking) {
       address: booking.address || null,
       is_recurring: booking.isRecurring || false,
       trace_id: booking.traceId || null,
-      // New fields:
+      
+      // Time fields
       start_time: booking.startTime || null,
       end_time: booking.endTime || null,
-      booking_duration: booking.booking_duration || computedDuration,
-      booking_price: booking.booking_price || null,
-      payment_status: booking.payment_status || null,
-      // Optionally add more fields like assigned_barber_name, service_name, customer_name_ if needed
+      
+      // Enhanced fields from frontend
+      booking_duration: enhancedData.serviceDuration || booking.booking_duration || computedDuration,
+      booking_price: enhancedData.servicePrice || booking.booking_price || null,
+      payment_status: enhancedData.paymentStatus || booking.payment_status || null,
+      
+      // Customer/Staff/Service names from frontend
+      customer_name_: enhancedData.customerName || null,
+      assigned_barber_name: enhancedData.staffName || null,
+      service_name: enhancedData.serviceName || null,
     }
 
     console.log("🗂️ Mapped booking for DB:", JSON.stringify(mappedBooking, null, 2))
