@@ -55,7 +55,8 @@ async function updateBookingInDB(booking, enhancedData = {}) {
       payment_status: enhancedData.paymentStatus || booking.payment_status || null,
       
       // Customer/Staff/Service names from frontend
-      customer_name_: enhancedData.customerName || null,
+      // Only update customer_name_ if a value is provided (not null)
+...(enhancedData.customerName && { customer_name_: enhancedData.customerName }),
       assigned_barber_name: enhancedData.staffName || null,
       service_name: enhancedData.serviceName || null,
     };
