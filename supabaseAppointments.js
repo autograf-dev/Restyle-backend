@@ -16,6 +16,12 @@ async function saveBookingToDB(booking) {
     // Ensure the referenced contact exists to satisfy FK constraint
     await ensureContactExists(booking.contactId)
 
+    // Compute duration in minutes if startTime and endTime exist and booking_duration is not provided.
+    let computedDuration = null
+    if (booking.startTime && booking.endTime) {
+      computedDuration = Math.round((new Date(booking.endTime) - new Date(booking.startTime)) / (1000 * 60))
+    }
+
     const mappedBooking = {
       id: booking.id,
       calendar_id: booking.calendarId || null,
@@ -27,6 +33,13 @@ async function saveBookingToDB(booking) {
       address: booking.address || null,
       is_recurring: booking.isRecurring || false,
       trace_id: booking.traceId || null,
+      // New fields:
+      start_time: booking.startTime || null,
+      end_time: booking.endTime || null,
+      booking_duration: booking.booking_duration || computedDuration,
+      booking_price: booking.booking_price || null,
+      payment_status: booking.payment_status || null,
+      // Optionally add more fields like assigned_barber_name, service_name, customer_name_ if needed
     }
 
     console.log("🗂️ Mapped booking for DB:", JSON.stringify(mappedBooking, null, 2))
