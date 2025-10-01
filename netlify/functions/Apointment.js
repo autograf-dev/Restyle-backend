@@ -2,7 +2,7 @@ const axios = require("axios");
 const { getValidAccessToken } = require("../../supbase");
 const { saveBookingToDB } = require("../../supabaseAppointments");
 
-console.log("📅 bookAppointment function - updated 2025-10-01");
+console.log("📅 bookAppointment function - updated 2025-10-03");
 
 exports.handler = async function (event) {
   try {
@@ -48,18 +48,8 @@ exports.handler = async function (event) {
     console.log('🕐 StartTime received:', startTime);
     console.log('🕐 EndTime received:', endTime);
     
-    // 🕐 DEBUG: Just pass through the time as-is for now
-    function convertToHighLevelTime(timeString) {
-      if (!timeString) return timeString;
-      
-      console.log(`🕐 Original time received: ${timeString}`);
-      console.log(`🕐 Passing through unchanged: ${timeString}`);
-      
-      return timeString;
-    }
-    
-    const highlevelStartTime = convertToHighLevelTime(startTime);
-    const highlevelEndTime = convertToHighLevelTime(endTime);
+    const highlevelStartTime = startTime;
+    const highlevelEndTime = endTime;
     
     console.log('🕐 Final times for HighLevel API:');
     console.log('🕐 StartTime for HighLevel:', highlevelStartTime);
@@ -102,7 +92,16 @@ exports.handler = async function (event) {
     );
 
     const newBooking = response.data || null;
-    console.log("📅 Extracted booking:", newBooking);
+    console.log("📅 Extracted booking from HighLevel API:", newBooking);
+
+    // ✅ CRITICAL FIX: Add startTime and endTime to the booking object
+    // since HighLevel API doesn't return them in the response
+    newBooking.startTime = startTime;
+    newBooking.endTime = endTime;
+    
+    console.log("✅ Added startTime and endTime to booking object:");
+    console.log("   startTime:", newBooking.startTime);
+    console.log("   endTime:", newBooking.endTime);
 
     // 📝 Prepare enhanced data for Supabase
     const customerName = `${customerFirstName || ''} ${customerLastName || ''}`.trim() || null;
@@ -126,6 +125,7 @@ exports.handler = async function (event) {
       
       // Pass enhanced data as second parameter
       dbInsert = await saveBookingToDB(newBooking, enhancedData);
+      console.log("✅ DB Insert successful:", dbInsert);
     } catch (dbError) {
       console.error("❌ DB save failed:", dbError.message);
       console.error("❌ Booking data that failed:", JSON.stringify(newBooking, null, 2));
