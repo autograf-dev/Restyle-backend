@@ -2,7 +2,7 @@ const axios = require("axios");
 const { getValidAccessToken } = require("../../supbase");
 const { updateBookingInDB } = require("../../updatesupabasebooking");
 
-console.log("✏️ updateAppointment function - created 2025-08-28");
+console.log("✏️ updateAppointment function - updated 2025-10-03");
 
 exports.handler = async function (event) {
   try {
@@ -17,7 +17,22 @@ exports.handler = async function (event) {
     }
 
     const params = event.queryStringParameters || {};
-    const { appointmentId, title, assignedUserId, startTime, endTime, calendarId, status } = params;
+    const { 
+      appointmentId, 
+      title, 
+      assignedUserId, 
+      startTime, 
+      endTime, 
+      calendarId, 
+      status,
+      // New enhanced parameters from frontend
+      serviceName,
+      servicePrice,
+      serviceDuration,
+      staffName,
+      customerFirstName,
+      customerLastName
+    } = params;
 
     if (!appointmentId) {
       return {
@@ -86,13 +101,39 @@ exports.handler = async function (event) {
     const updatedBooking = response.data || null;
     console.log("✏️ Updated booking:", updatedBooking);
 
+    // ✅ CRITICAL FIX: Add startTime and endTime to the booking object
+    // since HighLevel API doesn't return them in the response
+    if (startTime) updatedBooking.startTime = startTime;
+    if (endTime) updatedBooking.endTime = endTime;
+    
+    console.log("✅ Added startTime and endTime to updated booking object:");
+    console.log("   startTime:", updatedBooking.startTime);
+    console.log("   endTime:", updatedBooking.endTime);
+
+    // 📝 Prepare enhanced data for Supabase
+    const customerName = `${customerFirstName || ''} ${customerLastName || ''}`.trim() || null;
+    
+    const enhancedData = {
+      serviceName: serviceName || null,
+      servicePrice: servicePrice ? parseFloat(servicePrice) : null,
+      serviceDuration: serviceDuration ? parseInt(serviceDuration) : null,
+      staffName: staffName || null,
+      customerName: customerName,
+      paymentStatus: null, // Will be blank for now as requested
+    };
+
+    console.log("📝 Enhanced data for update:", JSON.stringify(enhancedData, null, 2));
+
     // 💾 Update booking in Supabase
     let dbUpdate = null;
     try {
       if (!updatedBooking || !updatedBooking.id) {
         throw new Error("Invalid booking data received from API");
       }
-      dbUpdate = await updateBookingInDB(updatedBooking);
+      
+      // Pass enhanced data as second parameter
+      dbUpdate = await updateBookingInDB(updatedBooking, enhancedData);
+      console.log("✅ DB Update successful:", dbUpdate);
     } catch (dbError) {
       console.error("❌ DB update failed:", dbError.message);
       console.error("❌ Booking data that failed:", JSON.stringify(updatedBooking, null, 2));

@@ -6,15 +6,33 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 /**
  * Update a booking in Supabase
- * @param {Object} booking
+ * @param {Object} booking - The booking data from HighLevel API
+ * @param {Object} enhancedData - Additional data from frontend (service price, duration, names, etc.)
  */
-async function updateBookingInDB(booking) {
+async function updateBookingInDB(booking, enhancedData = {}) {
   try {
     console.log("✏️ Attempting to update booking:", JSON.stringify(booking, null, 2));
+    console.log("✏️ Enhanced data received:", JSON.stringify(enhancedData, null, 2));
 
     // Ensure the referenced contact exists to satisfy FK constraint
     await ensureContactExists(booking.contactId);
 
+    // ✅ IMPORTANT: Extract startTime and endTime from the booking object
+    const bookingStartTime = booking.startTime || null;
+    const bookingEndTime = booking.endTime || null;
+    
+    console.log("⏰ Time data from HighLevel API:");
+    console.log("   Start Time:", bookingStartTime);
+    console.log("   End Time:", bookingEndTime);
+
+    // Compute duration in minutes if startTime and endTime exist and booking_duration is not provided.
+    let computedDuration = null;
+    if (bookingStartTime && bookingEndTime) {
+      computedDuration = Math.round((new Date(bookingEndTime) - new Date(bookingStartTime)) / (1000 * 60));
+      console.log("   Computed Duration:", computedDuration, "minutes");
+    }
+
+    // Use enhanced data if provided, otherwise fall back to computed/booking values
     const bookingRow = {
       id: booking.id,
       calendar_id: booking.calendarId || null,
@@ -26,9 +44,25 @@ async function updateBookingInDB(booking) {
       address: booking.address || null,
       is_recurring: booking.isRecurring || false,
       trace_id: booking.traceId || null,
+      
+      // ✅ Time fields - Use the values from HighLevel API
+      start_time: bookingStartTime,
+      end_time: bookingEndTime,
+      
+      // Enhanced fields from frontend
+      booking_duration: enhancedData.serviceDuration || booking.booking_duration || computedDuration,
+      booking_price: enhancedData.servicePrice || booking.booking_price || null,
+      payment_status: enhancedData.paymentStatus || booking.payment_status || null,
+      
+      // Customer/Staff/Service names from frontend
+      customer_name_: enhancedData.customerName || null,
+      assigned_barber_name: enhancedData.staffName || null,
+      service_name: enhancedData.serviceName || null,
     };
 
-    console.log("🗂️ Mapped booking for DB update:", JSON.stringify(mappedBooking, null, 2));
+    console.log("🗂️ Mapped booking for DB update:", JSON.stringify(bookingRow, null, 2));
+    console.log("🗂️ DB start_time value:", bookingRow.start_time);
+    console.log("🗂️ DB end_time value:", bookingRow.end_time);
 
     // 🔄 Upsert by ID to handle both create and update safely
     const { data, error } = await supabase
