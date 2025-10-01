@@ -18,10 +18,20 @@ async function saveBookingToDB(booking, enhancedData = {}) {
     // Ensure the referenced contact exists to satisfy FK constraint
     await ensureContactExists(booking.contactId)
 
+    // ✅ IMPORTANT: Extract startTime and endTime from the booking object
+    // The HighLevel API returns these fields directly
+    const bookingStartTime = booking.startTime || null
+    const bookingEndTime = booking.endTime || null
+    
+    console.log("⏰ Time data from HighLevel API:")
+    console.log("   Start Time:", bookingStartTime)
+    console.log("   End Time:", bookingEndTime)
+
     // Compute duration in minutes if startTime and endTime exist and booking_duration is not provided.
     let computedDuration = null
-    if (booking.startTime && booking.endTime) {
-      computedDuration = Math.round((new Date(booking.endTime) - new Date(booking.startTime)) / (1000 * 60))
+    if (bookingStartTime && bookingEndTime) {
+      computedDuration = Math.round((new Date(bookingEndTime) - new Date(bookingStartTime)) / (1000 * 60))
+      console.log("   Computed Duration:", computedDuration, "minutes")
     }
 
     // Use enhanced data if provided, otherwise fall back to computed/booking values
@@ -37,9 +47,9 @@ async function saveBookingToDB(booking, enhancedData = {}) {
       is_recurring: booking.isRecurring || false,
       trace_id: booking.traceId || null,
       
-      // Time fields
-      start_time: booking.startTime || null,
-      end_time: booking.endTime || null,
+      // ✅ Time fields - Use the values from HighLevel API
+      start_time: bookingStartTime,
+      end_time: bookingEndTime,
       
       // Enhanced fields from frontend
       booking_duration: enhancedData.serviceDuration || booking.booking_duration || computedDuration,
@@ -53,6 +63,8 @@ async function saveBookingToDB(booking, enhancedData = {}) {
     }
 
     console.log("🗂️ Mapped booking for DB:", JSON.stringify(mappedBooking, null, 2))
+    console.log("🗂️ DB start_time value:", mappedBooking.start_time)
+    console.log("🗂️ DB end_time value:", mappedBooking.end_time)
 
     // ✅ Upsert to avoid duplicates if the booking already exists
     const { data, error } = await supabase
