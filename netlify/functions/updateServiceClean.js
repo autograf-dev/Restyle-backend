@@ -146,7 +146,7 @@ exports.handler = async function (event) {
       slotBuffer: slotBufferBefore,
       appoinmentPerSlot: existingService.appoinmentPerSlot,
       appoinmentPerDay: existingService.appoinmentPerDay,
-      openHours: existingService.openHours,
+      // openHours: existingService.openHours,  // ❌ REMOVED - causes 422 error
       enableRecurring: existingService.enableRecurring,
       recurring: existingService.recurring,
       formId: existingService.formId,
