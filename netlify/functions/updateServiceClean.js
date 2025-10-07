@@ -127,14 +127,14 @@ exports.handler = async function (event) {
       slotDurationUnit = 'hours';
     }
 
-    // 🔧 FIX: Create clean payload with ONLY allowed fields
+    // 🔧 FIX: Create clean payload with ONLY allowed fields per GHL API docs
     const updatePayload = {
       name: name.trim(),
       description: serviceDescription,
       teamMembers: teamMembers,
       eventType: existingService.eventType,
+      slug: existingService.widgetSlug, // Changed from widgetSlug
       widgetSlug: existingService.widgetSlug,
-      calendarType: existingService.calendarType,
       widgetType: existingService.widgetType,
       eventTitle: `{{contact.name}} ${name.trim()} with {{appointment.user.name}}`,
       eventColor: eventColor,
@@ -142,10 +142,15 @@ exports.handler = async function (event) {
       slotDurationUnit: slotDurationUnit,
       slotInterval: slotInterval,
       slotIntervalUnit: existingService.slotIntervalUnit,
-      slotBufferUnit: existingService.slotBufferUnit,
+      preBufferUnit: existingService.preBufferUnit,
       slotBuffer: slotBufferBefore,
+      preBuffer: slotBufferBefore,
       appoinmentPerSlot: existingService.appoinmentPerSlot,
       appoinmentPerDay: existingService.appoinmentPerDay,
+      allowBookingAfter: existingService.allowBookingAfter,
+      allowBookingAfterUnit: existingService.allowBookingAfterUnit,
+      allowBookingFor: existingService.allowBookingFor,
+      allowBookingForUnit: existingService.allowBookingForUnit,
       // openHours: existingService.openHours,  // ❌ REMOVED - causes 422 error
       enableRecurring: existingService.enableRecurring,
       recurring: existingService.recurring,
@@ -153,6 +158,8 @@ exports.handler = async function (event) {
       stickyContact: existingService.stickyContact,
       isLivePaymentMode: existingService.isLivePaymentMode,
       autoConfirm: autoConfirm,
+      shouldSendAlertEmailsToAssignedMember: existingService.shouldSendAlertEmailsToAssignedMember,
+      alertEmail: existingService.alertEmail,
       googleInvitationEmails: existingService.googleInvitationEmails,
       allowReschedule: allowReschedule,
       allowCancellation: allowCancellation,
@@ -161,18 +168,14 @@ exports.handler = async function (event) {
       notes: notes,
       pixelId: existingService.pixelId,
       formSubmitType: existingService.formSubmitType,
+      formSubmitRedirectURL: existingService.formSubmitRedirectURL,
       formSubmitThanksMessage: existingService.formSubmitThanksMessage,
+      availabilityType: existingService.availabilityType,
       availabilities: existingService.availabilities,
       guestType: existingService.guestType,
       consentLabel: existingService.consentLabel,
       calendarCoverImage: existingService.calendarCoverImage,
       lookBusyConfig: existingService.lookBusyConfig,
-      allowBookingAfterUnit: existingService.allowBookingAfterUnit,
-      allowBookingAfter: existingService.allowBookingAfter,
-      allowBookingForUnit: existingService.allowBookingForUnit,
-      allowBookingFor: existingService.allowBookingFor,
-      preBufferUnit: existingService.preBufferUnit,
-      preBuffer: slotBufferBefore,
       isActive: existingService.isActive
     };
 
@@ -193,7 +196,11 @@ exports.handler = async function (event) {
 
     const updatedService = response.data;
 
+    // 🔍 DEBUG: Log what GHL actually returned
     console.log('📝 Service updated successfully:', serviceId);
+    console.log('🔍 Updated service team members count:', updatedService.calendar?.teamMembers?.length || 0);
+    console.log('🔍 Updated team members:', JSON.stringify(updatedService.calendar?.teamMembers || [], null, 2));
+    console.log('🔍 Full GHL response keys:', Object.keys(updatedService));
 
     return {
       statusCode: 200,
