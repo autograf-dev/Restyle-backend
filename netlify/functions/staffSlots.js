@@ -202,6 +202,30 @@ exports.handler = async function (event) {
       });
     }
 
+    // Fetch existing bookings to block already booked slots
+    let existingBookings = [];
+    if (userId) {
+      const { data: bookingsData, error: bookingsError } = await supabase
+        .from("restyle_bookings")
+        .select("start_time, booking_duration, assigned_user_id, status, appointment_status")
+        .eq("assigned_user_id", userId)
+        .in("status", ["booked", "confirmed"])
+        .in("appointment_status", ["confirmed", "pending"])
+        .gte("start_time", startOfRange.toISOString())
+        .lte("start_time", endOfRange.toISOString());
+      
+      if (bookingsError) {
+        console.error("Failed to fetch existing bookings:", bookingsError);
+      } else {
+        existingBookings = (bookingsData || []).map(booking => ({
+          startTime: new Date(booking.start_time),
+          duration: parseInt(booking.booking_duration) || 30, // Default to 30 minutes if duration is missing
+          endTime: new Date(new Date(booking.start_time).getTime() + (parseInt(booking.booking_duration) || 30) * 60000)
+        }));
+        console.log(`📅 Fetched ${existingBookings.length} existing bookings for user ${userId}`);
+      }
+    }
+
     const isSlotBlocked = (slotDate, slotMinutes) => {
       for (const block of timeBlockList) {
         if (block.recurring) {
@@ -262,6 +286,28 @@ exports.handler = async function (event) {
       return false;
     };
 
+    // Function to check if a slot conflicts with existing bookings
+    const isSlotBooked = (slotDate, slotMinutes) => {
+      for (const booking of existingBookings) {
+        // Check if the booking is on the same date
+        const bookingDate = new Date(booking.startTime.getFullYear(), booking.startTime.getMonth(), booking.startTime.getDate());
+        const slotDateOnly = new Date(slotDate.getFullYear(), slotDate.getMonth(), slotDate.getDate());
+        
+        if (bookingDate.getTime() === slotDateOnly.getTime()) {
+          // Convert booking times to minutes for comparison
+          const bookingStartMinutes = booking.startTime.getHours() * 60 + booking.startTime.getMinutes();
+          const bookingEndMinutes = booking.endTime.getHours() * 60 + booking.endTime.getMinutes();
+          
+          // Check if the slot time conflicts with the booking time range
+          if (isWithinRange(slotMinutes, bookingStartMinutes, bookingEndMinutes)) {
+            console.log(`🚫 Slot blocked by existing booking: ${booking.startTime.toLocaleString()} - ${booking.endTime.toLocaleString()}, slot: ${slotMinutes} minutes`);
+            return true;
+          }
+        }
+      }
+      return false;
+    };
+
     const filteredSlots = {};
     for (const day of daysToCheck) {
       const dateKey = day.toISOString().split("T")[0];
@@ -303,12 +349,17 @@ exports.handler = async function (event) {
           });
           const minutes = timeToMinutes(timeString);
           const isBlocked = isSlotBlocked(day, minutes);
+          const isBooked = isSlotBooked(day, minutes);
           
           if (isBlocked) {
             console.log(`🚫 Blocked slot: ${timeString} (${minutes} minutes) on ${day.toDateString()}`);
           }
           
-          return isWithinRange(minutes, barberHours.start, barberHours.end) && !isBlocked;
+          if (isBooked) {
+            console.log(`🚫 Booked slot: ${timeString} (${minutes} minutes) on ${day.toDateString()}`);
+          }
+          
+          return isWithinRange(minutes, barberHours.start, barberHours.end) && !isBlocked && !isBooked;
         });
       }
 
@@ -322,7 +373,7 @@ exports.handler = async function (event) {
       }
     }
 
-    console.log(`📊 Final results: ${Object.keys(filteredSlots).length} days with slots, ${timeBlockList.length} time blocks processed - VERSION 3.1 - RECURRING BLOCKS FIXED WITH DEBUG`);
+    console.log(`📊 Final results: ${Object.keys(filteredSlots).length} days with slots, ${timeBlockList.length} time blocks processed, ${existingBookings.length} existing bookings blocked - VERSION 3.2 - BOOKED SLOTS BLOCKED`);
 
     return {
       statusCode: 200,
@@ -338,7 +389,8 @@ exports.handler = async function (event) {
           barberHoursMap,
           timeOffList,
           timeBlockList,
-          debugVersion: "3.1 - RECURRING BLOCKS FIXED WITH DEBUG",
+          existingBookings,
+          debugVersion: "3.2 - BOOKED SLOTS BLOCKED",
           timeBlockDebug: timeBlockList.map(block => ({
             ...block,
             recurringDaysType: typeof block.recurringDays,
