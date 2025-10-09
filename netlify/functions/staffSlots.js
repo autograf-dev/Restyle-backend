@@ -54,8 +54,7 @@ exports.handler = async function (event) {
       };
     }
 
-    const { calendarId, userId, date } = event.queryStringParameters || {};
-
+    const { calendarId, userId, date, serviceDuration } = event.queryStringParameters || {};
     if (!calendarId) {
       return {
         statusCode: 400,
@@ -63,6 +62,9 @@ exports.handler = async function (event) {
         body: JSON.stringify({ error: "calendarId is required" })
       };
     }
+
+    // Parse service duration (in minutes), default to 30 if not provided
+    const serviceDurationMinutes = serviceDuration ? parseInt(serviceDuration) : 30;
 
     let startDate = new Date();
     if (date) {
@@ -346,7 +348,9 @@ exports.handler = async function (event) {
           hour12: true
         });
         const minutes = timeToMinutes(timeString);
-        return isWithinRange(minutes, openTime, closeTime);
+        // Apply service duration: ensure service can complete before business closing time
+        const serviceEndTime = minutes + serviceDurationMinutes;
+        return serviceEndTime <= closeTime;
       });
 
       if (userId) {
@@ -356,7 +360,7 @@ exports.handler = async function (event) {
         const barberHours = barberHoursMap[dayOfWeek];
         if (!barberHours || (barberHours.start === 0 && barberHours.end === 0)) continue;
         
-        console.log(`📅 Barber hours for day ${dayOfWeek}: start=${barberHours.start}, end=${barberHours.end}`);
+        console.log(`📅 Barber hours for day ${dayOfWeek}: start=${barberHours.start}, end=${barberHours.end}, serviceDuration=${serviceDurationMinutes}min`);
 
         if (isDateInTimeOff(day)) continue;
 
@@ -379,11 +383,11 @@ exports.handler = async function (event) {
             console.log(`🚫 Booked slot: ${timeString} (${minutes} minutes) on ${day.toDateString()}`);
           }
           
-          // Subtract 30 minutes (one slot) from barber END time only to avoid booking at closing time
-          const adjustedBarberEndTime = barberHours.end - 30;
-          const withinRange = isWithinRange(minutes, barberHours.start, adjustedBarberEndTime);
+          // Apply service duration: ensure service can complete before barber end time
+          const serviceEndTime = minutes + serviceDurationMinutes;
+          const withinRange = minutes >= barberHours.start && serviceEndTime <= barberHours.end;
           
-          console.log(`🔍 Slot ${timeString} (${minutes} min): start=${barberHours.start}, adjustedEnd=${adjustedBarberEndTime}, withinRange=${withinRange}, blocked=${isBlocked}, booked=${isBooked}`);
+          console.log(`🔍 Slot ${timeString} (${minutes} min): start=${barberHours.start}, end=${barberHours.end}, serviceEnd=${serviceEndTime}, withinRange=${withinRange}, blocked=${isBlocked}, booked=${isBooked}`);
           
           return withinRange && !isBlocked && !isBooked;
         });
@@ -399,7 +403,7 @@ exports.handler = async function (event) {
       }
     }
 
-    console.log(`📊 Final results: ${Object.keys(filteredSlots).length} days with slots, ${timeBlockList.length} time blocks processed, ${existingBookings.length} existing bookings blocked - VERSION 3.6 - DEBUG FIRST SLOT ISSUE`);
+    console.log(`📊 Final results: ${Object.keys(filteredSlots).length} days with slots, ${timeBlockList.length} time blocks processed, ${existingBookings.length} existing bookings blocked, serviceDuration=${serviceDurationMinutes}min - VERSION 3.7 - SERVICE DURATION FILTERING`);
 
     return {
       statusCode: 200,
@@ -416,7 +420,8 @@ exports.handler = async function (event) {
           timeOffList,
           timeBlockList,
           existingBookings,
-          debugVersion: "3.5 - CLOSING TIME ADJUSTED (EMPLOYEE LEVEL ONLY)",
+          debugVersion: "3.7 - SERVICE DURATION FILTERING",
+          serviceDurationMinutes: serviceDurationMinutes,
           timeBlockDebug: timeBlockList.map(block => ({
             ...block,
             recurringDaysType: typeof block.recurringDays,
