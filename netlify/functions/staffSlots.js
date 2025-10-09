@@ -346,7 +346,9 @@ exports.handler = async function (event) {
           hour12: true
         });
         const minutes = timeToMinutes(timeString);
-        return isWithinRange(minutes, openTime, closeTime);
+        // Subtract 30 minutes (one slot) from closing time to avoid booking at closing time
+        const adjustedCloseTime = closeTime - 30;
+        return isWithinRange(minutes, openTime, adjustedCloseTime);
       });
 
       if (userId) {
@@ -377,7 +379,9 @@ exports.handler = async function (event) {
             console.log(`🚫 Booked slot: ${timeString} (${minutes} minutes) on ${day.toDateString()}`);
           }
           
-          return isWithinRange(minutes, barberHours.start, barberHours.end) && !isBlocked && !isBooked;
+          // Subtract 30 minutes (one slot) from barber end time to avoid booking at closing time
+          const adjustedBarberEndTime = barberHours.end - 30;
+          return isWithinRange(minutes, barberHours.start, adjustedBarberEndTime) && !isBlocked && !isBooked;
         });
       }
 
@@ -391,7 +395,7 @@ exports.handler = async function (event) {
       }
     }
 
-    console.log(`📊 Final results: ${Object.keys(filteredSlots).length} days with slots, ${timeBlockList.length} time blocks processed, ${existingBookings.length} existing bookings blocked - VERSION 3.3 - TIMEZONE FIXED`);
+    console.log(`📊 Final results: ${Object.keys(filteredSlots).length} days with slots, ${timeBlockList.length} time blocks processed, ${existingBookings.length} existing bookings blocked - VERSION 3.4 - TIMEZONE FIXED + CLOSING TIME ADJUSTED`);
 
     return {
       statusCode: 200,
@@ -408,7 +412,7 @@ exports.handler = async function (event) {
           timeOffList,
           timeBlockList,
           existingBookings,
-          debugVersion: "3.3 - TIMEZONE FIXED",
+          debugVersion: "3.4 - TIMEZONE FIXED + CLOSING TIME ADJUSTED",
           timeBlockDebug: timeBlockList.map(block => ({
             ...block,
             recurringDaysType: typeof block.recurringDays,
