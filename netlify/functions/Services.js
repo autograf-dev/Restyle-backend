@@ -1,6 +1,5 @@
 const axios = require('axios');
-const { getValidAccessToken } = require('../../supbase'); 
-const { setCache } = require('../../supbaseCache'); // cache helper
+const { getValidAccessToken } = require('../../supbase');
 
 // 🔄 Retry helper for 429 Too Many Requests
 async function fetchWithRetry(url, headers, retries = 3, delay = 500) {
@@ -63,51 +62,7 @@ exports.handler = async function (event) {
 
     const calendars = response.data?.calendars || [];
 
-    // 🔹 Step 2: prefetch slots in background (does not block response)
-    (async () => {
-      const startDate = new Date();
-      startDate.setHours(0, 0, 0, 0);
-      const endDate = new Date(startDate);
-      endDate.setDate(endDate.getDate() + 10);
-
-      for (const cal of calendars) {
-        try {
-          const slotsUrl = `https://services.leadconnectorhq.com/calendars/${cal.id}/free-slots?startDate=${startDate.getTime()}&endDate=${endDate.getTime()}`;
-
-          // throttle each request (500ms apart)
-          await new Promise(r => setTimeout(r, 500));
-
-          const slotRes = await fetchWithRetry(slotsUrl, {
-            Authorization: `Bearer ${accessToken}`,
-            Version: '2021-04-15'
-          });
-
-          // Format slots to Mountain Time
-          const formattedSlots = {};
-          Object.entries(slotRes.data).forEach(([date, value]) => {
-            if (date === 'traceId') return;
-            if (!value.slots?.length) return;
-            formattedSlots[date] = value.slots.map(slot =>
-              new Date(slot).toLocaleString('en-US', {
-                timeZone: 'America/Denver',
-                hour: '2-digit',
-                minute: '2-digit',
-                hour12: true
-              })
-            );
-          });
-
-          const cacheKey = `prefetch:${cal.id}:${startDate.getTime()}:${endDate.getTime()}`;
-          await setCache(cacheKey, { calendarId: cal.id, formattedSlots }, 10);
-
-          console.log(`✅ Cached next 10 days slots for calendar ${cal.id}`);
-        } catch (slotErr) {
-          console.error(`❌ Prefetch failed for ${cal.id}:`, slotErr.message);
-        }
-      }
-    })();
-
-    // 🔹 Step 3: return calendars immediately
+    // 🔹 Step 2: return calendars immediately
     return {
       statusCode: 200,
       headers: corsHeaders,
