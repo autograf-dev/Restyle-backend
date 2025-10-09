@@ -355,6 +355,8 @@ exports.handler = async function (event) {
 
         const barberHours = barberHoursMap[dayOfWeek];
         if (!barberHours || (barberHours.start === 0 && barberHours.end === 0)) continue;
+        
+        console.log(`📅 Barber hours for day ${dayOfWeek}: start=${barberHours.start}, end=${barberHours.end}`);
 
         if (isDateInTimeOff(day)) continue;
 
@@ -377,9 +379,13 @@ exports.handler = async function (event) {
             console.log(`🚫 Booked slot: ${timeString} (${minutes} minutes) on ${day.toDateString()}`);
           }
           
-          // Subtract 30 minutes (one slot) from barber end time to avoid booking at closing time
+          // Subtract 30 minutes (one slot) from barber END time only to avoid booking at closing time
           const adjustedBarberEndTime = barberHours.end - 30;
-          return isWithinRange(minutes, barberHours.start, adjustedBarberEndTime) && !isBlocked && !isBooked;
+          const withinRange = isWithinRange(minutes, barberHours.start, adjustedBarberEndTime);
+          
+          console.log(`🔍 Slot ${timeString} (${minutes} min): start=${barberHours.start}, adjustedEnd=${adjustedBarberEndTime}, withinRange=${withinRange}, blocked=${isBlocked}, booked=${isBooked}`);
+          
+          return withinRange && !isBlocked && !isBooked;
         });
       }
 
@@ -393,7 +399,7 @@ exports.handler = async function (event) {
       }
     }
 
-    console.log(`📊 Final results: ${Object.keys(filteredSlots).length} days with slots, ${timeBlockList.length} time blocks processed, ${existingBookings.length} existing bookings blocked - VERSION 3.5 - CLOSING TIME ADJUSTED (EMPLOYEE LEVEL ONLY)`);
+    console.log(`📊 Final results: ${Object.keys(filteredSlots).length} days with slots, ${timeBlockList.length} time blocks processed, ${existingBookings.length} existing bookings blocked - VERSION 3.6 - DEBUG FIRST SLOT ISSUE`);
 
     return {
       statusCode: 200,
