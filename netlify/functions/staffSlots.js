@@ -349,8 +349,9 @@ exports.handler = async function (event) {
         });
         const minutes = timeToMinutes(timeString);
         // Apply service duration: ensure service can complete before business closing time
+        // AND ensure slot starts within business hours
         const serviceEndTime = minutes + serviceDurationMinutes;
-        return serviceEndTime <= closeTime;
+        return minutes >= openTime && serviceEndTime <= closeTime;
       });
 
       if (userId) {
@@ -384,10 +385,11 @@ exports.handler = async function (event) {
           }
           
           // Apply service duration: ensure service can complete before barber end time
+          // AND ensure slot starts at or after barber start time
           const serviceEndTime = minutes + serviceDurationMinutes;
           const withinRange = minutes >= barberHours.start && serviceEndTime <= barberHours.end;
           
-          console.log(`🔍 Slot ${timeString} (${minutes} min): start=${barberHours.start}, end=${barberHours.end}, serviceEnd=${serviceEndTime}, withinRange=${withinRange}, blocked=${isBlocked}, booked=${isBooked}`);
+          console.log(`🔍 Slot ${timeString} (${minutes} min): barberStart=${barberHours.start}, barberEnd=${barberHours.end}, serviceEnd=${serviceEndTime}, withinRange=${withinRange}, blocked=${isBlocked}, booked=${isBooked}`);
           
           return withinRange && !isBlocked && !isBooked;
         });
@@ -403,7 +405,7 @@ exports.handler = async function (event) {
       }
     }
 
-    console.log(`📊 Final results: ${Object.keys(filteredSlots).length} days with slots, ${timeBlockList.length} time blocks processed, ${existingBookings.length} existing bookings blocked, serviceDuration=${serviceDurationMinutes}min - VERSION 3.7 - SERVICE DURATION FILTERING`);
+    console.log(`📊 Final results: ${Object.keys(filteredSlots).length} days with slots, ${timeBlockList.length} time blocks processed, ${existingBookings.length} existing bookings blocked, serviceDuration=${serviceDurationMinutes}min - VERSION 3.8 - FIXED START TIME FILTERING`);
 
     return {
       statusCode: 200,
@@ -420,7 +422,7 @@ exports.handler = async function (event) {
           timeOffList,
           timeBlockList,
           existingBookings,
-          debugVersion: "3.7 - SERVICE DURATION FILTERING",
+          debugVersion: "3.8 - FIXED START TIME FILTERING",
           serviceDurationMinutes: serviceDurationMinutes,
           timeBlockDebug: timeBlockList.map(block => ({
             ...block,
