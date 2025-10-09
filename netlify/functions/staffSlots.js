@@ -217,11 +217,25 @@ exports.handler = async function (event) {
       if (bookingsError) {
         console.error("Failed to fetch existing bookings:", bookingsError);
       } else {
-        existingBookings = (bookingsData || []).map(booking => ({
-          startTime: new Date(booking.start_time),
-          duration: parseInt(booking.booking_duration) || 30, // Default to 30 minutes if duration is missing
-          endTime: new Date(new Date(booking.start_time).getTime() + (parseInt(booking.booking_duration) || 30) * 60000)
-        }));
+        existingBookings = (bookingsData || []).map(booking => {
+          const startTime = new Date(booking.start_time);
+          const duration = parseInt(booking.booking_duration) || 30;
+          const endTime = new Date(startTime.getTime() + duration * 60000);
+          
+          // Convert to Denver timezone for debugging
+          const startDenver = new Date(startTime.toLocaleString("en-US", { timeZone: "America/Denver" }));
+          const endDenver = new Date(endTime.toLocaleString("en-US", { timeZone: "America/Denver" }));
+          
+          console.log(`📅 Booking: ${startTime.toISOString()} (UTC) → ${startDenver.toLocaleString()} (Denver) for ${duration}min`);
+          
+          return {
+            startTime: startTime,
+            duration: duration,
+            endTime: endTime,
+            startTimeDenver: startDenver,
+            endTimeDenver: endDenver
+          };
+        });
         console.log(`📅 Fetched ${existingBookings.length} existing bookings for user ${userId}`);
       }
     }
@@ -289,18 +303,22 @@ exports.handler = async function (event) {
     // Function to check if a slot conflicts with existing bookings
     const isSlotBooked = (slotDate, slotMinutes) => {
       for (const booking of existingBookings) {
-        // Check if the booking is on the same date
-        const bookingDate = new Date(booking.startTime.getFullYear(), booking.startTime.getMonth(), booking.startTime.getDate());
+        // Convert booking times to Denver timezone for comparison
+        const bookingStartDenver = new Date(booking.startTime.toLocaleString("en-US", { timeZone: "America/Denver" }));
+        const bookingEndDenver = new Date(booking.endTime.toLocaleString("en-US", { timeZone: "America/Denver" }));
+        
+        // Check if the booking is on the same date (in Denver timezone)
+        const bookingDate = new Date(bookingStartDenver.getFullYear(), bookingStartDenver.getMonth(), bookingStartDenver.getDate());
         const slotDateOnly = new Date(slotDate.getFullYear(), slotDate.getMonth(), slotDate.getDate());
         
         if (bookingDate.getTime() === slotDateOnly.getTime()) {
-          // Convert booking times to minutes for comparison
-          const bookingStartMinutes = booking.startTime.getHours() * 60 + booking.startTime.getMinutes();
-          const bookingEndMinutes = booking.endTime.getHours() * 60 + booking.endTime.getMinutes();
+          // Convert booking times to minutes for comparison (in Denver timezone)
+          const bookingStartMinutes = bookingStartDenver.getHours() * 60 + bookingStartDenver.getMinutes();
+          const bookingEndMinutes = bookingEndDenver.getHours() * 60 + bookingEndDenver.getMinutes();
           
           // Check if the slot time conflicts with the booking time range
           if (isWithinRange(slotMinutes, bookingStartMinutes, bookingEndMinutes)) {
-            console.log(`🚫 Slot blocked by existing booking: ${booking.startTime.toLocaleString()} - ${booking.endTime.toLocaleString()}, slot: ${slotMinutes} minutes`);
+            console.log(`🚫 Slot blocked by existing booking: ${bookingStartDenver.toLocaleString()} - ${bookingEndDenver.toLocaleString()}, slot: ${slotMinutes} minutes`);
             return true;
           }
         }
@@ -373,7 +391,7 @@ exports.handler = async function (event) {
       }
     }
 
-    console.log(`📊 Final results: ${Object.keys(filteredSlots).length} days with slots, ${timeBlockList.length} time blocks processed, ${existingBookings.length} existing bookings blocked - VERSION 3.2 - BOOKED SLOTS BLOCKED`);
+    console.log(`📊 Final results: ${Object.keys(filteredSlots).length} days with slots, ${timeBlockList.length} time blocks processed, ${existingBookings.length} existing bookings blocked - VERSION 3.3 - TIMEZONE FIXED`);
 
     return {
       statusCode: 200,
@@ -390,7 +408,7 @@ exports.handler = async function (event) {
           timeOffList,
           timeBlockList,
           existingBookings,
-          debugVersion: "3.2 - BOOKED SLOTS BLOCKED",
+          debugVersion: "3.3 - TIMEZONE FIXED",
           timeBlockDebug: timeBlockList.map(block => ({
             ...block,
             recurringDaysType: typeof block.recurringDays,
