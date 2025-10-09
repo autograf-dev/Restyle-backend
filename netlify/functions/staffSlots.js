@@ -319,7 +319,7 @@ exports.handler = async function (event) {
           const bookingEndMinutes = bookingEndDenver.getHours() * 60 + bookingEndDenver.getMinutes();
           
           // Check if the slot time conflicts with the booking time range
-          if (isWithinRange(slotMinutes, bookingStartMinutes, bookingEndMinutes)) {
+          if (slotMinutes >= bookingStartMinutes && slotMinutes < bookingEndMinutes) {
             console.log(`🚫 Slot blocked by existing booking: ${bookingStartDenver.toLocaleString()} - ${bookingEndDenver.toLocaleString()}, slot: ${slotMinutes} minutes`);
             return true;
           }
