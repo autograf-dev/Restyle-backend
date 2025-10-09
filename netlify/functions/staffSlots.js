@@ -54,7 +54,7 @@ exports.handler = async function (event) {
       };
     }
 
-    const { calendarId, userId, date } = event.queryStringParameters || {};
+    const { calendarId, userId, date, locationId } = event.queryStringParameters || {};
 
     if (!calendarId) {
       return {
@@ -91,7 +91,31 @@ exports.handler = async function (event) {
       });
       return response.data;
     };
-    const slotsData = await fetchSlots();
+
+    const fetchBlockedSlots = async () => {
+      if (!locationId) {
+        console.log("⚠️ No locationId provided, skipping blocked slots fetch");
+        return {};
+      }
+      
+      try {
+        const url = `https://services.leadconnectorhq.com/calendars/blocked-slots?locationId=${locationId}&startTime=${startOfRange.getTime()}&endTime=${endOfRange.getTime()}`;
+        const response = await fetchWithRetry(url, {
+          Authorization: `Bearer ${accessToken}`,
+          Version: "2021-04-15"
+        });
+        console.log(`🔒 Fetched blocked slots for location ${locationId}:`, response.data);
+        return response.data;
+      } catch (error) {
+        console.warn("⚠️ Failed to fetch blocked slots:", error.message);
+        return {};
+      }
+    };
+
+    const [slotsData, blockedSlotsData] = await Promise.all([
+      fetchSlots(),
+      fetchBlockedSlots()
+    ]);
 
     // Fetch business hours
     const { data: businessHoursData, error: bhError } = await supabase
@@ -262,6 +286,40 @@ exports.handler = async function (event) {
       return false;
     };
 
+    const isSlotBooked = (slotDate, slotTime) => {
+      if (!blockedSlotsData || Object.keys(blockedSlotsData).length === 0) {
+        return false;
+      }
+
+      const dateKey = slotDate.toISOString().split("T")[0];
+      const blockedSlotsForDate = blockedSlotsData[dateKey];
+      
+      if (!blockedSlotsForDate || !blockedSlotsForDate.slots) {
+        return false;
+      }
+
+      // Convert slot time to minutes for comparison
+      const slotMinutes = timeToMinutes(slotTime);
+      
+      // Check if any blocked slot overlaps with this time slot
+      for (const blockedSlot of blockedSlotsForDate.slots) {
+        const blockedStart = new Date(blockedSlot.start);
+        const blockedEnd = new Date(blockedSlot.end);
+        
+        // Convert blocked times to minutes
+        const blockedStartMinutes = blockedStart.getHours() * 60 + blockedStart.getMinutes();
+        const blockedEndMinutes = blockedEnd.getHours() * 60 + blockedEnd.getMinutes();
+        
+        // Check if our slot falls within the blocked time range
+        if (slotMinutes >= blockedStartMinutes && slotMinutes < blockedEndMinutes) {
+          console.log(`🚫 Slot ${slotTime} is booked (blocked by appointment ${blockedStart.toLocaleTimeString()}-${blockedEnd.toLocaleTimeString()})`);
+          return true;
+        }
+      }
+      
+      return false;
+    };
+
     const filteredSlots = {};
     for (const day of daysToCheck) {
       const dateKey = day.toISOString().split("T")[0];
@@ -282,7 +340,13 @@ exports.handler = async function (event) {
           hour12: true
         });
         const minutes = timeToMinutes(timeString);
-        return isWithinRange(minutes, openTime, closeTime);
+        const isBooked = isSlotBooked(day, timeString);
+        
+        if (isBooked) {
+          console.log(`🚫 Booked slot: ${timeString} (${minutes} minutes) on ${day.toDateString()}`);
+        }
+        
+        return isWithinRange(minutes, openTime, closeTime) && !isBooked;
       });
 
       if (userId) {
@@ -303,12 +367,17 @@ exports.handler = async function (event) {
           });
           const minutes = timeToMinutes(timeString);
           const isBlocked = isSlotBlocked(day, minutes);
+          const isBooked = isSlotBooked(day, timeString);
           
           if (isBlocked) {
             console.log(`🚫 Blocked slot: ${timeString} (${minutes} minutes) on ${day.toDateString()}`);
           }
           
-          return isWithinRange(minutes, barberHours.start, barberHours.end) && !isBlocked;
+          if (isBooked) {
+            console.log(`🚫 Booked slot: ${timeString} (${minutes} minutes) on ${day.toDateString()}`);
+          }
+          
+          return isWithinRange(minutes, barberHours.start, barberHours.end) && !isBlocked && !isBooked;
         });
       }
 
@@ -322,7 +391,7 @@ exports.handler = async function (event) {
       }
     }
 
-    console.log(`📊 Final results: ${Object.keys(filteredSlots).length} days with slots, ${timeBlockList.length} time blocks processed - VERSION 3.1 - RECURRING BLOCKS FIXED WITH DEBUG`);
+    console.log(`📊 Final results: ${Object.keys(filteredSlots).length} days with slots, ${timeBlockList.length} time blocks processed, blocked slots fetched: ${Object.keys(blockedSlotsData).length} days - VERSION 3.2 - ADDED BLOCKED SLOTS FILTERING`);
 
     return {
       statusCode: 200,
@@ -338,7 +407,9 @@ exports.handler = async function (event) {
           barberHoursMap,
           timeOffList,
           timeBlockList,
-          debugVersion: "3.1 - RECURRING BLOCKS FIXED WITH DEBUG",
+          blockedSlotsData,
+          locationId,
+          debugVersion: "3.2 - ADDED BLOCKED SLOTS FILTERING",
           timeBlockDebug: timeBlockList.map(block => ({
             ...block,
             recurringDaysType: typeof block.recurringDays,
@@ -348,7 +419,11 @@ exports.handler = async function (event) {
             recurringDays: block.recurringDays,
             recurringDay: block.recurringDay
           }))
-        } : undefined
+        } : {
+          blockedSlotsData,
+          locationId,
+          debugVersion: "3.2 - ADDED BLOCKED SLOTS FILTERING"
+        }
       })
     };
 
