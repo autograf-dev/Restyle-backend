@@ -346,9 +346,7 @@ exports.handler = async function (event) {
           hour12: true
         });
         const minutes = timeToMinutes(timeString);
-        // Subtract 30 minutes (one slot) from closing time to avoid booking at closing time
-        const adjustedCloseTime = closeTime - 30;
-        return isWithinRange(minutes, openTime, adjustedCloseTime);
+        return isWithinRange(minutes, openTime, closeTime);
       });
 
       if (userId) {
@@ -395,7 +393,7 @@ exports.handler = async function (event) {
       }
     }
 
-    console.log(`📊 Final results: ${Object.keys(filteredSlots).length} days with slots, ${timeBlockList.length} time blocks processed, ${existingBookings.length} existing bookings blocked - VERSION 3.4 - TIMEZONE FIXED + CLOSING TIME ADJUSTED`);
+    console.log(`📊 Final results: ${Object.keys(filteredSlots).length} days with slots, ${timeBlockList.length} time blocks processed, ${existingBookings.length} existing bookings blocked - VERSION 3.5 - CLOSING TIME ADJUSTED (EMPLOYEE LEVEL ONLY)`);
 
     return {
       statusCode: 200,
@@ -412,7 +410,7 @@ exports.handler = async function (event) {
           timeOffList,
           timeBlockList,
           existingBookings,
-          debugVersion: "3.4 - TIMEZONE FIXED + CLOSING TIME ADJUSTED",
+          debugVersion: "3.5 - CLOSING TIME ADJUSTED (EMPLOYEE LEVEL ONLY)",
           timeBlockDebug: timeBlockList.map(block => ({
             ...block,
             recurringDaysType: typeof block.recurringDays,
