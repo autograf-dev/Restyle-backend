@@ -54,7 +54,8 @@ exports.handler = async function (event) {
       };
     }
 
-    const { calendarId, userId, date, locationId } = event.queryStringParameters || {};
+    const { calendarId, userId, date } = event.queryStringParameters || {};
+    const locationId = '7LYI93XFo8j4nZfswlaz'; // Hardcoded locationId - no frontend changes needed
 
     if (!calendarId) {
       return {
@@ -93,11 +94,6 @@ exports.handler = async function (event) {
     };
 
     const fetchBlockedSlots = async () => {
-      if (!locationId) {
-        console.log("⚠️ No locationId provided, skipping blocked slots fetch");
-        return {};
-      }
-      
       try {
         const url = `https://services.leadconnectorhq.com/calendars/blocked-slots?locationId=${locationId}&startTime=${startOfRange.getTime()}&endTime=${endOfRange.getTime()}`;
         const response = await fetchWithRetry(url, {
