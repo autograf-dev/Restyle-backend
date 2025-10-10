@@ -1,4 +1,3 @@
-<!-- Mobile-first, logic unchanged -->
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 
 <style>
@@ -15,15 +14,8 @@
     --chip:#f3f4f6;
     --chip-text:#374151;
 
-    /* Mobile spacing scale */
-    --space-1: 6px;
-    --space-2: 10px;
-    --space-3: 12px;
-    --space-4: 14px;
-    --space-5: 16px;
-    --radius: 14px;
-    --shadow: 0 1px 2px rgba(0,0,0,.05);
-    --shadow-hover: 0 6px 18px rgba(0,0,0,.08);
+    --shadow: 0 1px 1px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.06);
+    --shadow-hover: 0 2px 6px rgba(0,0,0,.06), 0 12px 36px rgba(0,0,0,.10);
   }
 
   *{box-sizing:border-box}
@@ -37,39 +29,57 @@
     -moz-osx-font-smoothing:grayscale;
   }
 
-  /* Container: mobile full-bleed feel with safe areas */
+  /* Container: slightly narrower for that app-like feel */
   .container{
-    max-width:1100px;
+    max-width:860px;
     margin:0 auto;
     padding:clamp(12px,4.5vw,28px);
-    padding-left: max(12px, env(safe-area-inset-left));
-    padding-right: max(12px, env(safe-area-inset-right));
+    padding-left:max(12px, env(safe-area-inset-left));
+    padding-right:max(12px, env(safe-area-inset-right));
   }
 
-  /* Brand + heading */
-  .brand{
-    display:flex; align-items:center; justify-content:center; flex-direction:column; gap:8px;
-    text-align:center; margin-bottom:4px;
+  /* —— Brand / Hero —— */
+  header.brand{
+    position:relative;
+    border-radius:22px;
+    padding-block:clamp(18px,5vw,38px);
+    margin-top:10px;
+    background:
+      radial-gradient(900px 180px at 50% -80px, rgba(117,26,41,.08), transparent 55%),
+      radial-gradient(700px 150px at 0% -40px, rgba(117,26,41,.06), transparent 60%),
+      var(--card);
+    box-shadow:var(--shadow);
+    border:1px solid var(--border);
+    text-align:center;
   }
-  .brand-logo{ height:52px; width:auto; object-fit:contain }
-  .brand-title{ font-weight:700; letter-spacing:.02em; text-transform:uppercase; font-size:13px }
   .page-title{
-    margin:4px 0 0;
-    font-size:clamp(20px,5.5vw,28px);
+    margin:0;
+    font-size:clamp(20px,5.2vw,28px);
     line-height:1.15; font-weight:800; letter-spacing:-.01em;
   }
 
   /* Greeting */
-  .greet{ display:grid; gap:6px; justify-items:center; margin-top:4px }
-  .greet-name{ font-size:clamp(17px,4.5vw,22px); font-weight:800; letter-spacing:.1px }
+  .greet{ display:grid; gap:8px; justify-items:center; margin-top:6px }
+  .greet-name{ font-size:clamp(22px,4.4vw,30px); font-weight:800; letter-spacing:-.01em; line-height:1.12 }
   .greet-contact{ font-size:13px; color:var(--muted) }
   .chip{
     display:inline-flex; align-items:center; gap:6px;
     background:var(--chip); color:var(--chip-text);
-    padding:6px 10px; border-radius:999px; font-weight:600; text-decoration:none;
+    padding:6px 12px; border-radius:999px; font-weight:600; text-decoration:none;
     border:1px solid var(--border);
+    box-shadow: inset 0 -1px 0 #11182714;
   }
   .greet-help{ margin:0; color:var(--muted); font-size:clamp(13px,3.6vw,14px) }
+
+  /* Section header like UNDERSTATEMNT */
+  .list-header{ margin:18px 0 8px }
+  .section-title{
+    display:flex; align-items:center; gap:12px;
+    font-weight:800; letter-spacing:-.01em;
+    font-size:clamp(18px,4vw,22px);
+    margin:0;
+  }
+  .section-title .rule{ height:1px; background:var(--border); flex:1; border-radius:1px }
 
   /* Buttons */
   .btn{
@@ -77,79 +87,72 @@
     padding:12px 14px; border-radius:12px; border:1px solid transparent;
     cursor:pointer; font-weight:700; font-size:clamp(.95rem,3.9vw,1rem);
     transition:.18s ease; text-decoration:none; user-select:none;
-    min-height:44px; /* mobile tap size */
+    min-height:44px;
   }
   .btn svg{ flex:0 0 auto }
-  .btn-primary{ background:var(--brand); color:#fff; box-shadow:0 1px 0 #00000014, 0 4px 12px rgba(117,26,41,.25) }
+  .btn-primary{ background:var(--brand); color:#fff; box-shadow:0 1px 0 #00000018, 0 4px 14px rgba(117,26,41,.25) }
   .btn-primary:hover{ background:var(--brand-900); transform:translateY(-1px) }
   .btn-primary:disabled{ background:#9ca3af; cursor:not-allowed; transform:none }
-  .btn-dark{ background:var(--dark); color:#fff; box-shadow:0 1px 0 #00000014, 0 4px 12px rgba(0,0,0,.22) }
+  .btn-dark{ background:var(--dark); color:#fff; box-shadow:0 1px 0 #00000018, 0 6px 18px rgba(0,0,0,.25) }
   .btn-dark:hover{ background:var(--dark-900); transform:translateY(-1px) }
   .btn-dark:disabled{ background:#9ca3af; cursor:not-allowed; transform:none }
 
-  /* List */
-  .bookings-grid{
-    display:grid; grid-template-columns:1fr; gap:14px; margin-top:16px;
-  }
+  /* List grid */
+  .bookings-grid{ display:grid; grid-template-columns:1fr; gap:16px; margin-top:12px }
 
-  /* Card: edge-to-edge mobile look */
+  /* Cards */
   .booking-card{
-    background:var(--card); border:1px solid var(--border); border-radius:16px;
-    padding:14px; box-shadow:var(--shadow);
+    background:var(--card); border:1px solid var(--border); border-radius:18px;
+    padding:16px 16px 12px; box-shadow:var(--shadow);
     transition:box-shadow .18s ease, transform .18s ease, border-color .18s ease;
+    animation:fadeIn .22s ease both;
   }
-  .booking-card:hover{ box-shadow:var(--shadow-hover); transform:translateY(-1px) }
+  .booking-card:hover{ box-shadow:var(--shadow-hover); transform:translateY(-1px); border-color:color-mix(in oklab, var(--border) 70%, var(--brand) 30%) }
 
-  /* Header stacks cleanly on mobile */
   .booking-header{
     display:flex; align-items:flex-start; justify-content:space-between; gap:10px;
-    padding-bottom:10px; border-bottom:1px dashed var(--border); margin-bottom:10px; flex-wrap:wrap;
+    padding-bottom:10px; border-bottom:1px dashed var(--border); margin-bottom:10px; flex-wrap:wrap
   }
-  .booking-title{
-    font-size:clamp(1rem,4.6vw,1.15rem); font-weight:800; margin:0; letter-spacing:.1px; line-height:1.25;
-    flex:1 1 100%;
-    /* Put chip under title on very small screens */
-  }
+  .booking-title{ font-size:clamp(1rem,4.6vw,1.15rem); font-weight:800; margin:0; letter-spacing:.1px; line-height:1.25 }
   .booking-pill{
-    display:inline-flex; align-items:center; padding:5px 10px; border-radius:999px;
+    display:inline-flex; align-items:center; padding:5px 12px; border-radius:999px;
     font-size:.82rem; font-weight:700; background:#eef2f7; color:#0f172a; border:1px solid var(--border)
   }
   .pill-cancelled{ background:#f3f4f6; color:#6b7280 }
 
-  /* Details: single column on phones */
   .booking-details{ display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:10px }
+  @media (max-width:720px){ .booking-details{ grid-template-columns:1fr } }
   .detail-item{ display:flex; flex-direction:column; gap:4px }
   .detail-label{ font-size:.78rem; color:var(--muted); font-weight:700; letter-spacing:.04em; text-transform:uppercase }
-  .detail-value{ font-size:1rem; font-weight:600; line-height:1.3 }
+  .detail-value{ font-size:1rem; font-weight:600 }
 
-  .booking-actions{
-    display:flex; gap:10px; justify-content:stretch; padding-top:10px; border-top:1px dashed var(--border); flex-wrap:wrap
-  }
+  .booking-actions{ display:flex; gap:10px; justify-content:stretch; padding-top:10px; border-top:1px dashed var(--border); flex-wrap:wrap }
+  @media (max-width:600px){ .booking-actions .btn{ width:100% } }
 
   .muted{ color:var(--muted); text-align:center; margin-top:10px; font-size:1rem }
 
   /* Time chip */
   .time-notification{
-    display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius:999px;
-    font-size:.74rem; font-weight:800; margin-left:6px; border:1px solid var(--border)
+    display:inline-flex; align-items:center; gap:6px; padding:4px 9px; border-radius:999px;
+    font-size:.74rem; font-weight:800; margin-left:8px; border:1px solid var(--border)
   }
-  .time-notification.urgent{ background:#fef2f2; color:#b91c1c }
-  .time-notification.warning{ background:#fffbeb; color:#b45309 }
-  .time-notification.normal{ background:#f0fdf4; color:#15803d }
-  .time-notification.closed{ background:#f3f4f6; color:#374151 }
+  .time-notification.urgent{ background:#fef2f2; color:#b91c1c; }
+  .time-notification.warning{ background:#fffbeb; color:#b45309; }
+  .time-notification.normal{ background:#f0fdf4; color:#15803d; }
+  .time-notification.closed{ background:#f3f4f6; color:#374151; }
 
-  /* Skeletons: compact for mobile */
+  /* Skeletons */
   .skeleton{
     background:linear-gradient(90deg,#f3f4f6 25%,#e5e7eb 50%,#f3f4f6 75%);
     background-size:200% 100%; animation:loading 1.4s infinite; border-radius:8px
   }
   @keyframes loading{ 0%{background-position:200% 0} 100%{background-position:-200% 0} }
-  .skeleton-card{ background:var(--card); border:1px solid var(--border); border-radius:16px; padding:16px; margin-bottom:12px; box-shadow:var(--shadow) }
+  .skeleton-card{ background:var(--card); border:1px solid var(--border); border-radius:16px; padding:20px; margin-bottom:12px; box-shadow:var(--shadow) }
   .skeleton-title{ height:20px; width:60%; margin-bottom:12px }
   .skeleton-detail{ height:12px; margin-bottom:8px }
   .skeleton-detail.short{ width:40% } .skeleton-detail.medium{ width:60% } .skeleton-detail.long{ width:80% }
 
-  /* Toast Notifications (snackbar on mobile) */
+  /* Toasts */
   .toast-container {
     position: fixed;
     top: 20px;
@@ -189,43 +192,12 @@
   .toast-progress { position: absolute; bottom: 0; left: 0; height: 3px; background: var(--brand); border-radius: 0 0 12px 12px; animation: toastProgress 5s linear forwards; }
   @keyframes toastProgress { from { width: 100%; } to { width: 0%; } }
 
-  /* ————— Mobile-first tweaks ————— */
-  @media (max-width: 900px){
-    .booking-details{ grid-template-columns:1fr; }
-  }
+  /* Subtle mount anim */
+  @keyframes fadeIn{ from{ opacity:0; transform:translateY(2px) } to{ opacity:1; transform:none } }
 
-  @media (max-width: 680px){
-    .container{ padding: 12px; }
-    .booking-card{ border-radius: 16px; padding: 14px; }
-    .booking-header{ gap:8px; }
-    .booking-title{ flex: 1 1 auto; }
-    .booking-actions .btn{ width:100%; } /* full-width touch buttons */
-    .toast-container{
-      top:auto; right:auto; left:0; right:0; bottom: max(10px, env(safe-area-inset-bottom));
-      margin:0 auto; max-width: min(560px, 92vw);
-      align-items:center;
-    }
-    .toast{
-      width: calc(100% - 24px);
-      transform: translateY(20px);
-    }
-    .toast.show{ transform: translateY(0) }
-  }
-
-  @media (max-width: 420px){
-    .container{ padding: 10px; }
-    .bookings-grid{ gap:12px; }
-    .booking-card{ padding:12px; }
-    .booking-title{ font-size: clamp(1rem, 5vw, 1.1rem); }
-    .booking-pill{ font-size:.78rem; padding:4px 9px }
-    .detail-label{ font-size:.74rem }
-    .detail-value{ font-size:.95rem }
-    .time-notification{ font-size:.72rem; margin-left:4px; padding:3px 7px }
-  }
-
-  /* Reduce “desktop” look on large screens by centering and constraining */
+  /* Larger screens: keep it comfy, not too wide */
   @media (min-width: 1024px){
-    .container{ max-width: 760px; }
+    .container{ max-width:760px; }
   }
 </style>
 </head>
@@ -233,7 +205,6 @@
 <body>
 <header class="container brand">
   <h1 class="page-title">Your bookings</h1>
-  <!-- Improved greeting -->
   <div id="greeting" class="greet">
     <div class="greet-name">Loading…</div>
     <div class="greet-contact"></div>
@@ -242,6 +213,14 @@
 </header>
 
 <main class="container">
+  <!-- UNDERSTATEMNT-style section header just above the list -->
+  <div class="list-header">
+    <h2 class="section-title">
+      <span>Your bookings</span>
+      <span class="rule"></span>
+    </h2>
+  </div>
+
   <div id="status" class="muted">Loading...</div>
   <div id="bookings-container"></div>
 </main>
@@ -304,17 +283,18 @@
 
   async function fetchContact(){
     try{
+      // fetch and display FIRST NAME only
       const res = await fetch(`https://restyle-backend.netlify.app/.netlify/functions/getContact?id=${contactId}`);
       const data = await res.json();
-      const name = (res.ok && data.contact)
-        ? [data.contact.firstName, data.contact.lastName].filter(Boolean).join(' ') || 'there'
+      const firstOnly = (res.ok && data.contact)
+        ? (data.contact.firstName || 'there')
         : 'there';
 
       const phone = (res.ok && data.contact && data.contact.phone) ? String(data.contact.phone) : '';
       const tel = phone.replace(/\D/g,''); // dialable
 
       greetingEl.innerHTML = `
-        <div class="greet-name">Welcome ${escapeHtml(name)}</div>
+        <div class="greet-name">Welcome ${escapeHtml(firstOnly)}</div>
         <div class="greet-contact">
           ${phone ? `<a class="chip" href="tel:${tel}">${escapeHtml(phone)}</a>` : ``}
         </div>
@@ -329,7 +309,7 @@
     }
   }
 
-  /* -------- time helpers -------- */
+  /* -------- time helpers (unchanged logic) -------- */
   function parseAsEdmonton(isoLike) {
     if (!isoLike) return null;
     const str = String(isoLike).trim();
@@ -448,6 +428,7 @@
         list.map(async (booking) => {
           const details = { ...booking };
 
+          // calendar -> service name
           if (booking.calendar_id) {
             try {
               const calRes = await fetch(`https://restyle-backend.netlify.app/.netlify/functions/Calendarget?id=${booking.calendar_id}`);
@@ -456,8 +437,10 @@
                 details.serviceName = cal.calendar.name || 'Untitled Booking';
               }
             } catch {}
+
           }
 
+          // appointment details
           try {
             const bRes = await fetch(`https://restyle-backend.netlify.app/.netlify/functions/getBooking?id=${booking.id}`);
             const bData = await bRes.json();
@@ -469,6 +452,7 @@
             }
           } catch {}
 
+          // staff details (more robust — fills first+last from 'name' when needed)
           if (details.assignedUserId) {
             try {
               const sRes = await fetch(`https://restyle-backend.netlify.app/.netlify/functions/Staff?id=${details.assignedUserId}`);
@@ -486,27 +470,47 @@
                 sData?.users?.lastName ||
                 sData?.lastName || '';
 
-              const full =
+              const fullRaw =
                 sData?.data?.name ||
                 sData?.name ||
-                sData?.displayName ||
-                [first, last].filter(Boolean).join(' ') || 'Staff';
+                sData?.displayName || '';
 
-              if (!first && !last && full.includes(' ')) {
-                const idx = full.trim().lastIndexOf(' ');
-                details.assignedStaffFirstName = full.slice(0, idx).trim();
-              } else {
-                details.assignedStaffFirstName = (first || '').trim();
-                details.assignedStaffLastName = (last || '').trim();
+              let f = (first || '').trim();
+              let l = (last || '').trim();
+
+              // If API only gives a single "name", split it smartly
+              if (!f && !l && fullRaw) {
+                const full = String(fullRaw).trim().replace(/\s+/g,' ');
+                const parts = full.split(' ');
+                if (parts.length === 1) {
+                  f = parts[0]; l = '';
+                } else {
+                  // put everything except last into first, last token as last name
+                  l = parts.pop();
+                  f = parts.join(' ');
+                }
               }
-            } catch {}
+
+              // As a final fallback, if still empty but we had fullRaw, show that as first name
+              if (!f && fullRaw) {
+                f = String(fullRaw).trim();
+              }
+
+              details.assignedStaffFirstName = f || '';
+              details.assignedStaffLastName  = l || '';
+              details.assignedStaffDisplay   = [f, l].filter(Boolean).join(' ') || 'Staff';
+
+            } catch (e) {
+              // If staff endpoint fails, keep fields undefined; renderer will handle gracefully
+              // console.warn('Staff fetch failed', e);
+            }
           }
 
           return details;
         })
       );
 
-      /* ONLY upcoming (future) bookings, incl. later today — logic unchanged */
+      /* ONLY upcoming (future) bookings, incl. later today — unchanged behavior */
       const nowMs = Date.now();
       const upcomingOnly = enriched.filter(b => {
         if (!b.startTime) return false;
@@ -514,6 +518,7 @@
         return Number.isFinite(t) && t >= nowMs;
       });
 
+      // Partition AFTER filtering (unchanged logic)
       const sortByStart = (a,b) => parseAsEdmonton(a.startTime) - parseAsEdmonton(b.startTime);
       const confirmed = [];
       const cancelled = [];
@@ -551,7 +556,13 @@
     })();
 
     const isCancelled = (booking.appointmentStatus || '').toLowerCase() === 'cancelled';
-    const staffName = `${booking.assignedStaffFirstName || ''} ${booking.assignedStaffLastName || ''}`.trim() || 'Unassigned';
+
+    // Prefer derived display if present; otherwise build from first/last
+    const displayStaff = booking.assignedStaffDisplay ||
+      `${booking.assignedStaffFirstName || ''} ${booking.assignedStaffLastName || ''}`.trim();
+
+    const staffName = displayStaff || 'Unassigned';
+
     const pill = isCancelled
       ? `<span class="booking-pill pill-cancelled">Cancelled</span>`
       : `<span class="booking-pill">with ${escapeHtml(staffName)}</span>`;
@@ -579,7 +590,7 @@
 
         ${isCancelled ? '' : `
           <div class="booking-actions">
-            <a href="https://restyle-app.netlify.app/update?id=${booking.id}"
+            <a href="/update-booking?id=${booking.id}"
                class="btn btn-primary ${withinTwoHours ? 'disabled' : ''}"
                ${withinTwoHours ? 'onclick="return false;" title="Cannot reschedule - booking starts within 2 hours"' : ''}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -627,14 +638,8 @@
 
   function escapeHtml(str) {
     return String(str).replace(/[&<>"'`=\/]/g, s => ({
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#39;",
-      "/": "&#x2F;",
-      "`": "&#x60;",
-      "=": "&#x3D;"
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;",
+      "'": "&#39;", "/": "&#x2F;", "`": "&#x60;", "=": "&#x3D;"
     }[s]));
   }
 </script>
