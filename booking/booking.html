@@ -204,7 +204,7 @@
 
 <body>
 <header class="container brand">
-  <h1 class="page-title">Your bookings</h1>
+  <img src="../logos/logo.png" alt="Restyle Salon" class="brand-logo" />
   <div id="greeting" class="greet">
     <div class="greet-name">Loading…</div>
     <div class="greet-contact"></div>
@@ -457,6 +457,8 @@
             try {
               const sRes = await fetch(`https://restyle-backend.netlify.app/.netlify/functions/Staff?id=${details.assignedUserId}`);
               const sData = await sRes.json();
+              
+              console.log('Staff API response for userId:', details.assignedUserId, sData);
 
               const first =
                 sData?.data?.firstName ||
@@ -474,6 +476,8 @@
                 sData?.data?.name ||
                 sData?.name ||
                 sData?.displayName || '';
+
+              console.log('Extracted staff data - first:', first, 'last:', last, 'fullRaw:', fullRaw);
 
               let f = (first || '').trim();
               let l = (last || '').trim();
@@ -499,10 +503,12 @@
               details.assignedStaffFirstName = f || '';
               details.assignedStaffLastName  = l || '';
               details.assignedStaffDisplay   = [f, l].filter(Boolean).join(' ') || 'Staff';
+              
+              console.log('Final staff details - firstName:', details.assignedStaffFirstName, 'lastName:', details.assignedStaffLastName, 'display:', details.assignedStaffDisplay);
 
             } catch (e) {
+              console.error('Staff fetch failed for userId:', details.assignedUserId, e);
               // If staff endpoint fails, keep fields undefined; renderer will handle gracefully
-              // console.warn('Staff fetch failed', e);
             }
           }
 
