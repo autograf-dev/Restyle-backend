@@ -1,24 +1,11 @@
-const axios = require("axios");
 const { createClient } = require("@supabase/supabase-js");
-const { getValidAccessToken } = require("../../supbase");
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-async function fetchWithRetry(url, headers, retries = 3, delay = 500) {
-  try {
-    return await axios.get(url, { headers });
-  } catch (err) {
-    if (err.response?.status === 429 && retries > 0) {
-      console.warn(`429 received, retrying in ${delay}ms...`);
-      await new Promise(r => setTimeout(r, delay));
-      return fetchWithRetry(url, headers, retries - 1, delay * 2);
-    }
-    throw err;
-  }
-}
+// Removed external slot fetching; using static slot generation instead
 
 function timeToMinutes(timeString) {
   const [time, modifier] = timeString.split(" ");
@@ -64,7 +51,6 @@ exports.handler = async function (event) {
   }
 
   try {
-    const accessToken = await getValidAccessToken();
     // Access token is no longer required since we now build static base slots
 
     const { calendarId, userId, date, serviceDuration } = event.queryStringParameters || {};
