@@ -350,8 +350,18 @@ exports.handler = async function (event) {
           hour12: true
         });
         const minutes = timeToMinutes(timeString);
-        // Only check if slot starts within business hours - service duration will be checked at barber level
-        return minutes >= openTime && minutes <= closeTime;
+        
+        // Apply service duration: ensure service can complete before business closing time
+        const serviceEndTime = minutes + serviceDurationMinutes;
+        
+        // If no specific user, apply service duration to business hours
+        // If user is specified, service duration will be applied at barber level instead
+        if (!userId) {
+          return minutes >= openTime && serviceEndTime <= closeTime;
+        } else {
+          // Only check if slot starts within business hours - service duration will be checked at barber level
+          return minutes >= openTime && minutes <= closeTime;
+        }
       });
 
       if (userId) {
@@ -408,7 +418,7 @@ exports.handler = async function (event) {
       }
     }
 
-    console.log(`📊 Final results: ${Object.keys(filteredSlots).length} days with slots, ${timeBlockList.length} time blocks processed, ${existingBookings.length} existing bookings blocked, serviceDuration=${serviceDurationMinutes}min - VERSION 3.9 - FIXED DOUBLE SERVICE DURATION FILTERING`);
+    console.log(`📊 Final results: ${Object.keys(filteredSlots).length} days with slots, ${timeBlockList.length} time blocks processed, ${existingBookings.length} existing bookings blocked, serviceDuration=${serviceDurationMinutes}min - VERSION 3.10 - FIXED SERVICE DURATION WHEN NO USERID PROVIDED`);
 
     return {
       statusCode: 200,
