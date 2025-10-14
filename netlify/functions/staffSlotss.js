@@ -1,11 +1,24 @@
+const axios = require("axios");
 const { createClient } = require("@supabase/supabase-js");
+const { getValidAccessToken } = require("../../supbase");
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// Removed external slot fetching; using static slot generation instead
+async function fetchWithRetry(url, headers, retries = 3, delay = 500) {
+  try {
+    return await axios.get(url, { headers });
+  } catch (err) {
+    if (err.response?.status === 429 && retries > 0) {
+      console.warn(`429 received, retrying in ${delay}ms...`);
+      await new Promise(r => setTimeout(r, delay));
+      return fetchWithRetry(url, headers, retries - 1, delay * 2);
+    }
+    throw err;
+  }
+}
 
 function timeToMinutes(timeString) {
   const [time, modifier] = timeString.split(" ");
@@ -20,25 +33,6 @@ function isWithinRange(minutes, start, end) {
   return minutes >= start && minutes <= end;
 }
 
-// Build static 24/7 base slots for the given days at a fixed interval (in minutes)
-function buildStaticSlots(days, intervalMinutes = 15) {
-  const out = {};
-  for (const day of days) {
-    const dateKey = day.toISOString().split("T")[0];
-    const slots = [];
-    const start = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 0, 0, 0);
-    const end = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 23, 59, 59);
-
-    for (let t = new Date(start); t <= end; t = new Date(t.getTime() + intervalMinutes * 60000)) {
-      // Keep same shape as GHL input: epoch milliseconds inside per-day buckets
-      slots.push(t.getTime());
-    }
-
-    out[dateKey] = { slots };
-  }
-  return out;
-}
-
 exports.handler = async function (event) {
   const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
@@ -51,7 +45,14 @@ exports.handler = async function (event) {
   }
 
   try {
-    // Access token is no longer required since we now build static base slots
+    const accessToken = await getValidAccessToken();
+    if (!accessToken) {
+      return {
+        statusCode: 401,
+        headers: corsHeaders,
+        body: JSON.stringify({ error: "Access token missing" })
+      };
+    }
 
     const { calendarId, userId, date, serviceDuration } = event.queryStringParameters || {};
     if (!calendarId) {
@@ -64,8 +65,6 @@ exports.handler = async function (event) {
 
     // Parse service duration (in minutes), default to 30 if not provided
     const serviceDurationMinutes = serviceDuration ? parseInt(serviceDuration) : 30;
-    // End-of-day buffer (minutes) to mimic original endpoint behavior
-    const endOffsetMinutes = 120;
 
     let startDate = new Date();
     if (date) {
@@ -86,8 +85,15 @@ exports.handler = async function (event) {
     const startOfRange = new Date(daysToCheck[0].getFullYear(), daysToCheck[0].getMonth(), daysToCheck[0].getDate(), 0, 0, 0);
     const endOfRange = new Date(daysToCheck[daysToCheck.length - 1].getFullYear(), daysToCheck[daysToCheck.length - 1].getMonth(), daysToCheck[daysToCheck.length - 1].getDate(), 23, 59, 59);
 
-    // Build static 24/7 base slots for the next 30 days (30-minute interval)
-    const slotsData = buildStaticSlots(daysToCheck, 30);
+    const fetchSlots = async () => {
+      const url = `https://services.leadconnectorhq.com/calendars/${calendarId}/free-slots?startDate=${startOfRange.getTime()}&endDate=${endOfRange.getTime()}`;
+      const response = await fetchWithRetry(url, {
+        Authorization: `Bearer ${accessToken}`,
+        Version: "2021-04-15"
+      });
+      return response.data;
+    };
+    const slotsData = await fetchSlots();
 
     // Fetch business hours
     const { data: businessHoursData, error: bhError } = await supabase
@@ -334,16 +340,6 @@ exports.handler = async function (event) {
 
       let validSlots = slotsData[dateKey]?.slots || [];
 
-      // Keep only slots that render to the same local (Denver) date as dateKey
-      validSlots = validSlots.filter(slot => {
-        const denverDate = new Date(new Date(slot).toLocaleString("en-US", { timeZone: "America/Denver" }));
-        const y = denverDate.getFullYear();
-        const m = String(denverDate.getMonth() + 1).padStart(2, "0");
-        const d = String(denverDate.getDate()).padStart(2, "0");
-        const denverKey = `${y}-${m}-${d}`;
-        return denverKey === dateKey;
-      });
-
       validSlots = validSlots.filter(slot => {
         const timeString = new Date(slot).toLocaleString("en-US", {
           timeZone: "America/Denver",
@@ -355,7 +351,7 @@ exports.handler = async function (event) {
         // Apply service duration: ensure service can complete before business closing time
         // AND ensure slot starts within business hours
         const serviceEndTime = minutes + serviceDurationMinutes;
-        return minutes >= openTime && serviceEndTime <= (closeTime - endOffsetMinutes);
+        return minutes >= openTime && serviceEndTime <= closeTime;
       });
 
       if (userId) {
@@ -391,16 +387,13 @@ exports.handler = async function (event) {
           // Apply service duration: ensure service can complete before barber end time
           // AND ensure slot starts at or after barber start time
           const serviceEndTime = minutes + serviceDurationMinutes;
-          const withinRange = minutes >= barberHours.start && serviceEndTime <= (barberHours.end - endOffsetMinutes);
+          const withinRange = minutes >= barberHours.start && serviceEndTime <= barberHours.end;
           
           console.log(`🔍 Slot ${timeString} (${minutes} min): barberStart=${barberHours.start}, barberEnd=${barberHours.end}, serviceEnd=${serviceEndTime}, withinRange=${withinRange}, blocked=${isBlocked}, booked=${isBooked}`);
           
           return withinRange && !isBlocked && !isBooked;
         });
       }
-
-      // Ensure ascending order of times (epoch ms)
-      validSlots.sort((a, b) => a - b);
 
       if (validSlots.length > 0) {
         filteredSlots[dateKey] = validSlots.map(slot => new Date(slot).toLocaleString("en-US", {
