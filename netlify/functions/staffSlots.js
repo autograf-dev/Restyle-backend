@@ -64,8 +64,6 @@ exports.handler = async function (event) {
 
     // Parse service duration (in minutes), default to 30 if not provided
     const serviceDurationMinutes = serviceDuration ? parseInt(serviceDuration) : 30;
-    // End-of-day buffer (minutes) to mimic original endpoint behavior
-    const endOffsetMinutes = 120;
 
     let startDate = new Date();
     if (date) {
@@ -355,7 +353,7 @@ exports.handler = async function (event) {
         // Apply service duration: ensure service can complete before business closing time
         // AND ensure slot starts within business hours
         const serviceEndTime = minutes + serviceDurationMinutes;
-        return minutes >= openTime && serviceEndTime <= (closeTime - endOffsetMinutes);
+        return minutes >= openTime && serviceEndTime <= closeTime;
       });
 
       if (userId) {
@@ -391,7 +389,7 @@ exports.handler = async function (event) {
           // Apply service duration: ensure service can complete before barber end time
           // AND ensure slot starts at or after barber start time
           const serviceEndTime = minutes + serviceDurationMinutes;
-          const withinRange = minutes >= barberHours.start && serviceEndTime <= (barberHours.end - endOffsetMinutes);
+          const withinRange = minutes >= barberHours.start && serviceEndTime <= barberHours.end;
           
           console.log(`🔍 Slot ${timeString} (${minutes} min): barberStart=${barberHours.start}, barberEnd=${barberHours.end}, serviceEnd=${serviceEndTime}, withinRange=${withinRange}, blocked=${isBlocked}, booked=${isBooked}`);
           
