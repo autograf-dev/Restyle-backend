@@ -329,6 +329,8 @@ exports.handler = async function (event) {
       if (!bh) continue;
       const openTime = bh.open_time;
       const closeTime = bh.close_time;
+      
+      console.log(`🕐 Business hours for day ${dayOfWeek}: open=${openTime}, close=${closeTime}, serviceDuration=${serviceDurationMinutes}min`);
 
       let validSlots = slotsData[dateKey]?.slots || [];
 
@@ -357,6 +359,7 @@ exports.handler = async function (event) {
         // If no specific user, apply service duration to business hours
         // If user is specified, service duration will be applied at barber level instead
         if (!userId) {
+          console.log(`🔍 Store-level filtering: slot=${timeString} (${minutes}min), serviceEnd=${serviceEndTime}, businessClose=${closeTime}, allowed=${minutes >= openTime && serviceEndTime <= closeTime}`);
           return minutes >= openTime && serviceEndTime <= closeTime;
         } else {
           // Only check if slot starts within business hours - service duration will be checked at barber level
@@ -418,7 +421,7 @@ exports.handler = async function (event) {
       }
     }
 
-    console.log(`📊 Final results: ${Object.keys(filteredSlots).length} days with slots, ${timeBlockList.length} time blocks processed, ${existingBookings.length} existing bookings blocked, serviceDuration=${serviceDurationMinutes}min - VERSION 3.10 - FIXED SERVICE DURATION WHEN NO USERID PROVIDED`);
+    console.log(`📊 Final results: ${Object.keys(filteredSlots).length} days with slots, ${timeBlockList.length} time blocks processed, ${existingBookings.length} existing bookings blocked, serviceDuration=${serviceDurationMinutes}min - VERSION 3.11 - ADDED DEBUGGING FOR STORE LEVEL FILTERING`);
 
     return {
       statusCode: 200,
