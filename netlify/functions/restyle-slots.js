@@ -332,6 +332,16 @@ exports.handler = async function (event) {
 
       let validSlots = slotsData[dateKey]?.slots || [];
 
+      // Keep only slots that render to the same local (Denver) date as dateKey
+      validSlots = validSlots.filter(slot => {
+        const denverDate = new Date(new Date(slot).toLocaleString("en-US", { timeZone: "America/Denver" }));
+        const y = denverDate.getFullYear();
+        const m = String(denverDate.getMonth() + 1).padStart(2, "0");
+        const d = String(denverDate.getDate()).padStart(2, "0");
+        const denverKey = `${y}-${m}-${d}`;
+        return denverKey === dateKey;
+      });
+
       validSlots = validSlots.filter(slot => {
         const timeString = new Date(slot).toLocaleString("en-US", {
           timeZone: "America/Denver",
