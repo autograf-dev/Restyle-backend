@@ -84,8 +84,8 @@ exports.handler = async function (event) {
     const startOfRange = new Date(daysToCheck[0].getFullYear(), daysToCheck[0].getMonth(), daysToCheck[0].getDate(), 0, 0, 0);
     const endOfRange = new Date(daysToCheck[daysToCheck.length - 1].getFullYear(), daysToCheck[daysToCheck.length - 1].getMonth(), daysToCheck[daysToCheck.length - 1].getDate(), 23, 59, 59);
 
-    // Build static 24/7 base slots for the next 30 days (15-minute interval)
-    const slotsData = buildStaticSlots(daysToCheck, 15);
+    // Build static 24/7 base slots for the next 30 days (30-minute interval)
+    const slotsData = buildStaticSlots(daysToCheck, 30);
 
     // Fetch business hours
     const { data: businessHoursData, error: bhError } = await supabase
@@ -386,6 +386,9 @@ exports.handler = async function (event) {
           return withinRange && !isBlocked && !isBooked;
         });
       }
+
+      // Ensure ascending order of times (epoch ms)
+      validSlots.sort((a, b) => a - b);
 
       if (validSlots.length > 0) {
         filteredSlots[dateKey] = validSlots.map(slot => new Date(slot).toLocaleString("en-US", {
