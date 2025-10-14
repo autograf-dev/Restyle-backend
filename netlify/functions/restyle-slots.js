@@ -64,8 +64,8 @@ exports.handler = async function (event) {
 
     // Parse service duration (in minutes), default to 30 if not provided
     const serviceDurationMinutes = serviceDuration ? parseInt(serviceDuration) : 30;
-    // End-of-day buffer (minutes) to mimic original endpoint behavior (hide last hour)
-    const endOffsetMinutes = 60;
+    // End-of-day buffer (minutes) to mimic original endpoint behavior
+    const endOffsetMinutes = 120;
 
     let startDate = new Date();
     if (date) {
