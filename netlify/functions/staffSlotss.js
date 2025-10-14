@@ -56,8 +56,9 @@ function timeToMinutes(timeString) {
   return hours * 60 + minutes;
 }
 
-function isWithinRange(minutes, start, end) {
-  return minutes >= start && minutes <= end;
+// Note: use end-exclusive for blocks to allow immediate post-break slot
+function isWithinRangeExclusiveEnd(minutes, start, end) {
+  return minutes >= start && minutes < end;
 }
 
 /** Build static per-day slot MINUTES (0..1430 step) — no epochs, no UTC */
@@ -158,11 +159,11 @@ exports.handler = async function (event) {
 
       if (barberData.weekend_days) {
         try {
-          let weekendString = barberData.weekend_days.replace(/^['"]|['"]$/g, '');
+          let weekendString = barberData.weekend_days.replace(/^["']|["']$/g, '');
           if (weekendString.includes('{') && weekendString.includes('}')) {
             weekendString = weekendString
-              .replace(/^['"]*\{/, '[')
-              .replace(/\}['"]*.*$/, ']')
+              .replace(/^["']*\{/, '[')
+              .replace(/\}["']*.*$/, ']')
               .replace(/\\"/g, '"');
           }
           barberWeekends = JSON.parse(weekendString);
@@ -214,7 +215,7 @@ exports.handler = async function (event) {
         const recurring = recurringRaw === true || 
                           recurringRaw === "true" || 
                           recurringRaw === "\"true\"" ||
-                          String(recurringRaw).toLowerCase().replace(/['"]/g, '') === "true";
+                          String(recurringRaw).toLowerCase().replace(/["']/g, '') === "true";
         let recurringDays = [];
         if (recurring && item["Block/Recurring Day"]) {
           recurringDays = item["Block/Recurring Day"].split(',').map(day => day.trim());
@@ -264,11 +265,13 @@ exports.handler = async function (event) {
       }
     }
 
-    const isSlotBooked = (slotDate, slotMinutes) => {
+    // duration-aware overlap: true if [mins, mins+dur) overlaps any booking [start, end)
+    const isSlotBooked = (slotDate, slotMinutes, durMinutes) => {
       const slotDayKey = ymdInTZ(slotDate);
+      const slotEnd = slotMinutes + durMinutes;
       for (const booking of existingBookings) {
         if (booking.startDayKey === slotDayKey) {
-          if (slotMinutes >= booking.startMinutes && slotMinutes < booking.endMinutes) {
+          if (slotMinutes < booking.endMinutes && slotEnd > booking.startMinutes) {
             return true;
           }
         }
@@ -286,7 +289,7 @@ exports.handler = async function (event) {
             recurringDaysList = recurringDaysList.split(',').map(day => day.trim());
           }
           if (recurringDaysList && recurringDaysList.includes(currentDayName)) {
-            if (isWithinRange(slotMinutes, block.start, block.end)) return true;
+            if (isWithinRangeExclusiveEnd(slotMinutes, block.start, block.end)) return true;
           }
         } else if (block.date) {
           let blockDateOnlyKey;
@@ -296,7 +299,7 @@ exports.handler = async function (event) {
             console.warn(`Invalid time_block date format:`, block.date, e.message);
           }
           const currDateOnlyKey = ymdInTZ(slotDate);
-          if (blockDateOnlyKey && blockDateOnlyKey === currDateOnlyKey && isWithinRange(slotMinutes, block.start, block.end)) {
+          if (blockDateOnlyKey && blockDateOnlyKey === currDateOnlyKey && isWithinRangeExclusiveEnd(slotMinutes, block.start, block.end)) {
             return true;
           }
         }
@@ -343,7 +346,7 @@ exports.handler = async function (event) {
 
         validMins = validMins.filter(mins => {
           const isBlocked = isSlotBlocked(day, mins);
-          const isBooked = isSlotBooked(day, mins);
+          const isBooked = isSlotBooked(day, mins, serviceDurationMinutes);
           const serviceEndTime = mins + serviceDurationMinutes;
           const withinRange = mins >= barberHours.start && serviceEndTime <= barberHours.end;
           const dbg = displayFromMinutes(mins);
@@ -358,7 +361,7 @@ exports.handler = async function (event) {
       }
     }
 
-    console.log(`📊 Final results: ${Object.keys(filteredSlots).length} days with slots, ${timeBlockList.length} time blocks processed, ${existingBookings.length} existing bookings blocked, serviceDuration=${serviceDurationMinutes}min - TZ=${TARGET_TZ}`);
+    console.log(`📊 Final results: ${Object.keys(filteredSlots).length} days with slots, ${timeBlockList.length} time blocks processed, ${existingBookings.length} existing bookings blocked (duration-aware), serviceDuration=${serviceDurationMinutes}min - TZ=${TARGET_TZ}`);
 
     return {
       statusCode: 200,
@@ -375,7 +378,7 @@ exports.handler = async function (event) {
           timeOffList,
           timeBlockList,
           existingBookings,
-          debugVersion: "3.13 - local-minute grid (no UTC spill)",
+          debugVersion: "3.13.1 - local-minute grid w/ duration & exclusive block end",
           serviceDurationMinutes: serviceDurationMinutes,
           targetTimeZone: TARGET_TZ
         } : undefined
@@ -383,12 +386,12 @@ exports.handler = async function (event) {
     };
 
   } catch (err) {
-    console.error("❌ Error in WorkingSlots:", err.message);
+    console.error("❌ Error in staffSlotss:", err.message);
     return {
       statusCode: 500,
       headers: corsHeaders,
       body: JSON.stringify({
-        error: "Failed to fetch working slots",
+        error: "Failed to fetch working slots (staffSlotss)",
         details: err.message
       })
     };
