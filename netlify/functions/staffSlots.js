@@ -5,40 +5,103 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// Removed external slot fetching; using static slot generation instead
+// -------------------- CONSTANTS & HELPERS --------------------
+const TARGET_TZ = "America/Edmonton";
 
+/** format YYYY-MM-DD for a Date in TARGET_TZ (no parsing of localized strings) */
+function ymdInTZ(date) {
+  const dtf = new Intl.DateTimeFormat("en-CA", {
+    timeZone: TARGET_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const parts = dtf.formatToParts(date);
+  const y = parts.find(p => p.type === "year").value;
+  const m = parts.find(p => p.type === "month").value;
+  const d = parts.find(p => p.type === "day").value;
+  return `${y}-${m}-${d}`;
+}
+
+/** minutes since local midnight in TARGET_TZ for a Date */
+function minutesInTZ(date) {
+  const dtf = new Intl.DateTimeFormat("en-CA", {
+    timeZone: TARGET_TZ,
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const parts = dtf.formatToParts(date);
+  const hh = parseInt(parts.find(p => p.type === "hour").value, 10);
+  const mm = parseInt(parts.find(p => p.type === "minute").value, 10);
+  return hh * 60 + mm;
+}
+
+/** display like "06:30 PM" given minutes since local midnight */
+function displayFromMinutes(mins) {
+  let h = Math.floor(mins / 60) % 24;
+  const m = mins % 60;
+  const ampm = h >= 12 ? "PM" : "AM";
+  h = h % 12;
+  if (h === 0) h = 12;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")} ${ampm}`;
+}
+
+/** parse "hh:mm AM/PM" -> minutes; used only for your existing debug lines */
 function timeToMinutes(timeString) {
   const [time, modifier] = timeString.split(" ");
   let [hours, minutes] = time.split(":").map(Number);
-
   if (modifier === "PM" && hours !== 12) hours += 12;
   if (modifier === "AM" && hours === 12) hours = 0;
   return hours * 60 + minutes;
+}
+
+/** weekday index (0=Sunday..6=Saturday) in TARGET_TZ for a Date */
+function dayOfWeekInTZ(date) {
+  const dtf = new Intl.DateTimeFormat("en-US", {
+    timeZone: TARGET_TZ,
+    weekday: "long",
+  });
+  const name = dtf.format(date); // e.g., "Monday"
+  const map = { Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 };
+  return map[name];
+}
+
+/** today's date at midnight, computed for TARGET_TZ (returned as a Date object) */
+function tzTodayDate() {
+  const dtf = new Intl.DateTimeFormat("en-CA", {
+    timeZone: TARGET_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const parts = dtf.formatToParts(new Date());
+  const y = parseInt(parts.find(p => p.type === "year").value, 10);
+  const m = parseInt(parts.find(p => p.type === "month").value, 10);
+  const d = parseInt(parts.find(p => p.type === "day").value, 10);
+  // Construct a Date at local environment timezone but representing the target Y-M-D
+  return new Date(y, m - 1, d);
 }
 
 function isWithinRange(minutes, start, end) {
   return minutes >= start && minutes <= end;
 }
 
-// Build static 24/7 base slots for the given days at a fixed interval (in minutes)
-function buildStaticSlots(days, intervalMinutes = 15) {
+/** Build static per-day slot MINUTES (0..1430 step) — no epochs, no UTC */
+function buildStaticSlotsMinutes(days, intervalMinutes = 30) {
   const out = {};
   for (const day of days) {
-    const dateKey = day.toISOString().split("T")[0];
-    const slots = [];
-    const start = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 0, 0, 0);
-    const end = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 23, 59, 59);
-
-    for (let t = new Date(start); t <= end; t = new Date(t.getTime() + intervalMinutes * 60000)) {
-      // Keep same shape as GHL input: epoch milliseconds inside per-day buckets
-      slots.push(t.getTime());
+    const dateKey = ymdInTZ(day);
+    const minutes = [];
+    for (let t = 0; t <= 23 * 60 + 59; t += intervalMinutes) {
+      minutes.push(t);
     }
-
-    out[dateKey] = { slots };
+    out[dateKey] = { minutes };
   }
   return out;
 }
 
+// -------------------- MAIN HANDLER --------------------
 exports.handler = async function (event) {
   const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
@@ -51,8 +114,6 @@ exports.handler = async function (event) {
   }
 
   try {
-    // Access token is no longer required since we now build static base slots
-
     const { calendarId, userId, date, serviceDuration } = event.queryStringParameters || {};
     if (!calendarId) {
       return {
@@ -62,10 +123,10 @@ exports.handler = async function (event) {
       };
     }
 
-    // Parse service duration (in minutes), default to 30 if not provided
     const serviceDurationMinutes = serviceDuration ? parseInt(serviceDuration) : 30;
 
-    let startDate = new Date();
+    // Start from today in TARGET_TZ when no explicit date is provided
+    let startDate = tzTodayDate();
     if (date) {
       const parts = date.split("-");
       if (parts.length === 3) {
@@ -81,13 +142,21 @@ exports.handler = async function (event) {
       daysToCheck.push(d);
     }
 
-    const startOfRange = new Date(daysToCheck[0].getFullYear(), daysToCheck[0].getMonth(), daysToCheck[0].getDate(), 0, 0, 0);
-    const endOfRange = new Date(daysToCheck[daysToCheck.length - 1].getFullYear(), daysToCheck[daysToCheck.length - 1].getMonth(), daysToCheck[daysToCheck.length - 1].getDate(), 23, 59, 59);
+    const startOfRange = new Date(
+      daysToCheck[0].getFullYear(),
+      daysToCheck[0].getMonth(),
+      daysToCheck[0].getDate(), 0, 0, 0
+    );
+    const endOfRange = new Date(
+      daysToCheck[daysToCheck.length - 1].getFullYear(),
+      daysToCheck[daysToCheck.length - 1].getMonth(),
+      daysToCheck[daysToCheck.length - 1].getDate(), 23, 59, 59
+    );
 
-    // Build static 24/7 base slots for the next 30 days (30-minute interval)
-    const slotsData = buildStaticSlots(daysToCheck, 30);
+    // Build 30-min grid in LOCAL minutes
+    const slotsData = buildStaticSlotsMinutes(daysToCheck, 30);
 
-    // Fetch business hours
+    // ---- business hours
     const { data: businessHoursData, error: bhError } = await supabase
       .from("business_hours")
       .select("*")
@@ -96,10 +165,13 @@ exports.handler = async function (event) {
 
     const businessHoursMap = {};
     businessHoursData.forEach(item => {
+      // coerce to numbers for safety
+      item.open_time = Number(item.open_time);
+      item.close_time = Number(item.close_time);
       businessHoursMap[item.day_of_week] = item;
     });
 
-    // Fetch barber hours
+    // ---- barber hours
     let barberHoursMap = {};
     let barberWeekends = [];
     let barberWeekendIndexes = [];
@@ -112,12 +184,14 @@ exports.handler = async function (event) {
         .single();
       if (barberError) throw new Error("Failed to fetch barber hours");
 
-      // Parse weekend_days
       if (barberData.weekend_days) {
         try {
-          let weekendString = barberData.weekend_days.replace(/^['"]|['"]$/g, '');
+          let weekendString = barberData.weekend_days.replace(/^["']|["']$/g, '');
           if (weekendString.includes('{') && weekendString.includes('}')) {
-            weekendString = weekendString.replace(/^['"]*\{/, '[').replace(/\}['"]*.*$/, ']').replace(/\\"/g, '"');
+            weekendString = weekendString
+              .replace(/^["']*\{/, '[')
+              .replace(/\}["']*.*$/, ']')
+              .replace(/\\"/g, '"');
           }
           barberWeekends = JSON.parse(weekendString);
         } catch (e) {
@@ -140,7 +214,7 @@ exports.handler = async function (event) {
       };
     }
 
-    // Fetch time off
+    // ---- time off
     let timeOffList = [];
     if (userId) {
       const { data: timeOffData } = await supabase.from("time_off").select("*").eq("ghl_id", userId);
@@ -150,53 +224,46 @@ exports.handler = async function (event) {
       }));
     }
     const isDateInTimeOff = (date) => {
+      const dayKey = ymdInTZ(date); // YYYY-MM-DD in TARGET_TZ
       for (const period of timeOffList) {
-        const start = new Date(period.start.getFullYear(), period.start.getMonth(), period.start.getDate());
-        const end = new Date(period.end.getFullYear(), period.end.getMonth(), period.end.getDate());
-        if (date >= start && date < end) return true;
+        const startKey = ymdInTZ(period.start);
+        const endKey = ymdInTZ(period.end);
+        if (dayKey >= startKey && dayKey < endKey) return true; // end exclusive
       }
       return false;
     };
 
-    // Fetch time blocks
+    // ---- time blocks
     let timeBlockList = [];
     if (userId) {
       const { data: blockData } = await supabase.from("time_block").select("*").eq("ghl_id", userId);
       console.log(`🔍 Fetched ${blockData?.length || 0} time blocks for user ${userId}`);
-      
       timeBlockList = (blockData || []).map(item => {
-        // Handle the recurring field which might have quotes around "true"
         const recurringRaw = item["Block/Recurring"];
         const recurring = recurringRaw === true || 
-                         recurringRaw === "true" || 
-                         recurringRaw === "\"true\"" ||
-                         String(recurringRaw).toLowerCase().replace(/['"]/g, '') === "true";
-        
+                          recurringRaw === "true" || 
+                          recurringRaw === "\"true\"" ||
+                          String(recurringRaw).toLowerCase().replace(/["']/g, '') === "true";
         let recurringDays = [];
-        
         if (recurring && item["Block/Recurring Day"]) {
-          // Parse comma-separated days like "Friday,Saturday,Monday,Wednesday,Thursday,Tuesday,Sunday"
           recurringDays = item["Block/Recurring Day"].split(',').map(day => day.trim());
         }
-        
         const block = {
           start: parseInt(item["Block/Start"]),
           end: parseInt(item["Block/End"]),
           date: item["Block/Date"] ? item["Block/Date"] : null,
-          recurring: recurring,
-          recurringDays: recurringDays,
+          recurring,
+          recurringDays,
           name: item["Block/Name"] || "Time Block",
-          // Force deployment update - VERSION 3.1 - FIXED RECURRING BLOCKS
           version: "3.1"
         };
-        
         console.log(`📅 Time block: ${block.name}, recurring: ${block.recurring} (raw: ${recurringRaw}), days: [${block.recurringDays.join(',')}], array length: ${block.recurringDays.length}, time: ${block.start}-${block.end} minutes`);
         console.log(`📅 Full block object:`, JSON.stringify(block, null, 2));
         return block;
       });
     }
 
-    // Fetch existing bookings to block already booked slots
+    // ---- existing bookings
     let existingBookings = [];
     if (userId) {
       const { data: bookingsData, error: bookingsError } = await supabase
@@ -215,104 +282,22 @@ exports.handler = async function (event) {
           const startTime = new Date(booking.start_time);
           const duration = parseInt(booking.booking_duration) || 30;
           const endTime = new Date(startTime.getTime() + duration * 60000);
-          
-          // Convert to Denver timezone for debugging
-          const startDenver = new Date(startTime.toLocaleString("en-US", { timeZone: "America/Denver" }));
-          const endDenver = new Date(endTime.toLocaleString("en-US", { timeZone: "America/Denver" }));
-          
-          console.log(`📅 Booking: ${startTime.toISOString()} (UTC) → ${startDenver.toLocaleString()} (Denver) for ${duration}min`);
-          
-          return {
-            startTime: startTime,
-            duration: duration,
-            endTime: endTime,
-            startTimeDenver: startDenver,
-            endTimeDenver: endDenver
-          };
+          const startDayKey = ymdInTZ(startTime);
+          const endDayKey = ymdInTZ(endTime);
+          const startMinutes = minutesInTZ(startTime);
+          const endMinutes = minutesInTZ(endTime);
+          console.log(`📅 Booking: ${startTime.toISOString()} → ${startDayKey} ${Math.floor(startMinutes/60)}:${String(startMinutes%60).padStart(2,"0")}–${Math.floor(endMinutes/60)}:${String(endMinutes%60).padStart(2,"0")} (${TARGET_TZ}) for ${duration}min`);
+          return { startTime, endTime, startDayKey, endDayKey, startMinutes, endMinutes };
         });
         console.log(`📅 Fetched ${existingBookings.length} existing bookings for user ${userId}`);
       }
     }
 
-    const isSlotBlocked = (slotDate, slotMinutes) => {
-      for (const block of timeBlockList) {
-        if (block.recurring) {
-          // Check if current day matches any of the recurring days
-          const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-          const currentDayName = dayNames[slotDate.getDay()];
-          
-          // Handle both field names for backward compatibility
-          let recurringDaysList = block.recurringDays || block.recurringDay;
-          
-          // Debug logging to see what we're working with
-          console.log(`🔍 Debug - block.recurringDays:`, block.recurringDays);
-          console.log(`🔍 Debug - block.recurringDay:`, block.recurringDay);
-          console.log(`🔍 Debug - recurringDaysList:`, recurringDaysList);
-          
-          // If it's a string, split it into an array
-          if (typeof recurringDaysList === 'string') {
-            recurringDaysList = recurringDaysList.split(',').map(day => day.trim());
-          }
-          
-          if (recurringDaysList && recurringDaysList.includes(currentDayName)) {
-            console.log(`🔍 Checking time block: ${block.name}, slot: ${slotMinutes} minutes, block range: ${block.start}-${block.end} minutes`);
-            if (isWithinRange(slotMinutes, block.start, block.end)) {
-              console.log(`🚫 Slot blocked by recurring time_block: ${block.name} on ${currentDayName} at ${slotMinutes} minutes`);
-              return true;
-            } else {
-              console.log(`✅ Slot NOT blocked: ${slotMinutes} is outside range ${block.start}-${block.end}`);
-            }
-          } else {
-            console.log(`🔍 Day mismatch: current day ${currentDayName} not in recurring days:`, recurringDaysList);
-          }
-        } else if (block.date) {
-          // Parse the block date properly
-          let blockDate;
-          try {
-            const blockDateStr = block.date;
-            if (blockDateStr.includes(',')) {
-              // Format: '9/26/2025, 6:30:00 PM'
-              const [datePart] = blockDateStr.split(',');
-              const [month, day, year] = datePart.trim().split('/');
-              blockDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-            } else {
-              blockDate = new Date(blockDateStr);
-            }
-            
-            const blockDateOnly = new Date(blockDate.getFullYear(), blockDate.getMonth(), blockDate.getDate());
-            const currDateOnly = new Date(slotDate.getFullYear(), slotDate.getMonth(), slotDate.getDate());
-            
-            if (blockDateOnly.getTime() === currDateOnly.getTime() && isWithinRange(slotMinutes, block.start, block.end)) {
-              console.log(`Slot blocked by specific time_block: ${block.name} on ${blockDateOnly.toDateString()}`);
-              return true;
-            }
-          } catch (e) {
-            console.warn(`Invalid time_block date format:`, block.date, e.message);
-          }
-        }
-      }
-      return false;
-    };
-
-    // Function to check if a slot conflicts with existing bookings
     const isSlotBooked = (slotDate, slotMinutes) => {
+      const slotDayKey = ymdInTZ(slotDate);
       for (const booking of existingBookings) {
-        // Convert booking times to Denver timezone for comparison
-        const bookingStartDenver = new Date(booking.startTime.toLocaleString("en-US", { timeZone: "America/Denver" }));
-        const bookingEndDenver = new Date(booking.endTime.toLocaleString("en-US", { timeZone: "America/Denver" }));
-        
-        // Check if the booking is on the same date (in Denver timezone)
-        const bookingDate = new Date(bookingStartDenver.getFullYear(), bookingStartDenver.getMonth(), bookingStartDenver.getDate());
-        const slotDateOnly = new Date(slotDate.getFullYear(), slotDate.getMonth(), slotDate.getDate());
-        
-        if (bookingDate.getTime() === slotDateOnly.getTime()) {
-          // Convert booking times to minutes for comparison (in Denver timezone)
-          const bookingStartMinutes = bookingStartDenver.getHours() * 60 + bookingStartDenver.getMinutes();
-          const bookingEndMinutes = bookingEndDenver.getHours() * 60 + bookingEndDenver.getMinutes();
-          
-          // Check if the slot time conflicts with the booking time range
-          if (slotMinutes >= bookingStartMinutes && slotMinutes < bookingEndMinutes) {
-            console.log(`🚫 Slot blocked by existing booking: ${bookingStartDenver.toLocaleString()} - ${bookingEndDenver.toLocaleString()}, slot: ${slotMinutes} minutes`);
+        if (booking.startDayKey === slotDayKey) {
+          if (slotMinutes >= booking.startMinutes && slotMinutes < booking.endMinutes) {
             return true;
           }
         }
@@ -320,108 +305,89 @@ exports.handler = async function (event) {
       return false;
     };
 
+    const isSlotBlocked = (slotDate, slotMinutes) => {
+      for (const block of timeBlockList) {
+        if (block.recurring) {
+          const dayNames = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+          const currentDayName = dayNames[slotDate.getDay()];
+          let recurringDaysList = block.recurringDays || block.recurringDay;
+          if (typeof recurringDaysList === 'string') {
+            recurringDaysList = recurringDaysList.split(',').map(day => day.trim());
+          }
+          if (recurringDaysList && recurringDaysList.includes(currentDayName)) {
+            if (isWithinRange(slotMinutes, block.start, block.end)) return true;
+          }
+        } else if (block.date) {
+          let blockDateOnlyKey;
+          try {
+            blockDateOnlyKey = ymdInTZ(new Date(block.date));
+          } catch (e) {
+            console.warn(`Invalid time_block date format:`, block.date, e.message);
+          }
+          const currDateOnlyKey = ymdInTZ(slotDate);
+          if (blockDateOnlyKey && blockDateOnlyKey === currDateOnlyKey && isWithinRange(slotMinutes, block.start, block.end)) {
+            return true;
+          }
+        }
+      }
+      return false;
+    };
+
+    // -------------------- FILTERING --------------------
     const filteredSlots = {};
     for (const day of daysToCheck) {
-      const dateKey = day.toISOString().split("T")[0];
-      const dayOfWeek = day.getDay();
+  const dateKey = ymdInTZ(day);
+  const dayOfWeek = dayOfWeekInTZ(day);
 
       const bh = businessHoursMap[dayOfWeek];
       if (!bh) continue;
       const openTime = bh.open_time;
       const closeTime = bh.close_time;
-      
+
       console.log(`🕐 Business hours for day ${dayOfWeek}: open=${openTime}, close=${closeTime}, serviceDuration=${serviceDurationMinutes}min`);
 
-      let validSlots = slotsData[dateKey]?.slots || [];
+      // start from local-minute grid
+      let validMins = (slotsData[dateKey]?.minutes || []).slice();
 
-      // Keep only slots that render to the same local (Denver) date as dateKey
-      validSlots = validSlots.filter(slot => {
-        const denverDate = new Date(new Date(slot).toLocaleString("en-US", { timeZone: "America/Denver" }));
-        const y = denverDate.getFullYear();
-        const m = String(denverDate.getMonth() + 1).padStart(2, "0");
-        const d = String(denverDate.getDate()).padStart(2, "0");
-        const denverKey = `${y}-${m}-${d}`;
-        return denverKey === dateKey;
-      });
-
-      validSlots = validSlots.filter(slot => {
-        const timeString = new Date(slot).toLocaleString("en-US", {
-          timeZone: "America/Denver",
-          hour: "2-digit",
-          minute: "2-digit",
-          hour12: true
-        });
-        const minutes = timeToMinutes(timeString);
-        
-        // Apply service duration: ensure service can complete before business closing time
-        const serviceEndTime = minutes + serviceDurationMinutes;
-        
-        // If no specific user, apply service duration to business hours
-        // If user is specified, service duration will be applied at barber level instead
+      // store-level filter
+      validMins = validMins.filter(mins => {
+        const serviceEndTime = mins + serviceDurationMinutes;
         if (!userId) {
-          console.log(`🔍 Store-level filtering: slot=${timeString} (${minutes}min), serviceEnd=${serviceEndTime}, businessClose=${closeTime}, allowed=${minutes >= openTime && serviceEndTime <= closeTime}`);
-          return minutes >= openTime && serviceEndTime <= closeTime;
+          const allowed = mins >= openTime && serviceEndTime <= closeTime;
+          if (allowed === false) {
+            const dbg = displayFromMinutes(mins);
+            console.log(`🔍 Store-level filtering: slot=${dbg} (${mins}min), serviceEnd=${serviceEndTime}, businessClose=${closeTime}, allowed=${allowed}`);
+          }
+          return allowed;
         } else {
-          // Only check if slot starts within business hours - service duration will be checked at barber level
-          return minutes >= openTime && minutes <= closeTime;
+          return mins >= openTime && mins <= closeTime;
         }
       });
 
       if (userId) {
-        // Skip barber weekend
         if (barberWeekendIndexes.includes(dayOfWeek)) continue;
-
         const barberHours = barberHoursMap[dayOfWeek];
         if (!barberHours || (barberHours.start === 0 && barberHours.end === 0)) continue;
-        
-        console.log(`📅 Barber hours for day ${dayOfWeek}: start=${barberHours.start}, end=${barberHours.end}, serviceDuration=${serviceDurationMinutes}min`);
-
         if (isDateInTimeOff(day)) continue;
 
-        validSlots = validSlots.filter(slot => {
-          const timeString = new Date(slot).toLocaleString("en-US", {
-            timeZone: "America/Denver",
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: true
-          });
-          const minutes = timeToMinutes(timeString);
-          const isBlocked = isSlotBlocked(day, minutes);
-          const isBooked = isSlotBooked(day, minutes);
-          
-          if (isBlocked) {
-            console.log(`🚫 Blocked slot: ${timeString} (${minutes} minutes) on ${day.toDateString()}`);
-          }
-          
-          if (isBooked) {
-            console.log(`🚫 Booked slot: ${timeString} (${minutes} minutes) on ${day.toDateString()}`);
-          }
-          
-          // Apply service duration: ensure service can complete before barber end time
-          // AND ensure slot starts at or after barber start time
-          const serviceEndTime = minutes + serviceDurationMinutes;
-          const withinRange = minutes >= barberHours.start && serviceEndTime <= barberHours.end;
-          
-          console.log(`🔍 Slot ${timeString} (${minutes} min): barberStart=${barberHours.start}, barberEnd=${barberHours.end}, serviceEnd=${serviceEndTime}, withinRange=${withinRange}, blocked=${isBlocked}, booked=${isBooked}`);
-          
+        validMins = validMins.filter(mins => {
+          const isBlocked = isSlotBlocked(day, mins);
+          const isBooked = isSlotBooked(day, mins);
+          const serviceEndTime = mins + serviceDurationMinutes;
+          const withinRange = mins >= barberHours.start && serviceEndTime <= barberHours.end;
+          const dbg = displayFromMinutes(mins);
+          console.log(`🔍 Slot ${dbg} (${mins} min): barberStart=${barberHours.start}, barberEnd=${barberHours.end}, serviceEnd=${serviceEndTime}, withinRange=${withinRange}, blocked=${isBlocked}, booked=${isBooked}`);
           return withinRange && !isBlocked && !isBooked;
         });
       }
 
-      // Ensure ascending order of times (epoch ms)
-      validSlots.sort((a, b) => a - b);
-
-      if (validSlots.length > 0) {
-        filteredSlots[dateKey] = validSlots.map(slot => new Date(slot).toLocaleString("en-US", {
-          timeZone: "America/Denver",
-          hour: "2-digit",
-          minute: "2-digit",
-          hour12: true
-        }));
+      validMins.sort((a,b) => a - b);
+      if (validMins.length > 0) {
+        filteredSlots[dateKey] = validMins.map(displayFromMinutes);
       }
     }
 
-    console.log(`📊 Final results: ${Object.keys(filteredSlots).length} days with slots, ${timeBlockList.length} time blocks processed, ${existingBookings.length} existing bookings blocked, serviceDuration=${serviceDurationMinutes}min - VERSION 3.11 - ADDED DEBUGGING FOR STORE LEVEL FILTERING`);
+    console.log(`📊 Final results: ${Object.keys(filteredSlots).length} days with slots, ${timeBlockList.length} time blocks processed, ${existingBookings.length} existing bookings blocked, serviceDuration=${serviceDurationMinutes}min - TZ=${TARGET_TZ}`);
 
     return {
       statusCode: 200,
@@ -438,17 +404,9 @@ exports.handler = async function (event) {
           timeOffList,
           timeBlockList,
           existingBookings,
-          debugVersion: "3.8 - FIXED START TIME FILTERING",
+          debugVersion: "3.13 - local-minute grid (no UTC spill)",
           serviceDurationMinutes: serviceDurationMinutes,
-          timeBlockDebug: timeBlockList.map(block => ({
-            ...block,
-            recurringDaysType: typeof block.recurringDays,
-            recurringDaysLength: block.recurringDays ? block.recurringDays.length : 0,
-            fieldNames: Object.keys(block),
-            // Ensure we show the correct field name in debug
-            recurringDays: block.recurringDays,
-            recurringDay: block.recurringDay
-          }))
+          targetTimeZone: TARGET_TZ
         } : undefined
       })
     };

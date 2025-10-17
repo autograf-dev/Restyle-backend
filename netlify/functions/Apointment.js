@@ -2,7 +2,7 @@ const axios = require("axios");
 const { getValidAccessToken } = require("../../supbase");
 const { saveBookingToDB } = require("../../supabaseAppointments");
 
-console.log("📅 bookAppointment function - updated 2025-10-03");
+console.log("📅 bookAppointment function - updated 2025-08-27");
 
 exports.handler = async function (event) {
   try {
@@ -17,21 +17,7 @@ exports.handler = async function (event) {
     }
 
     const params = event.queryStringParameters || {};
-    const { 
-      contactId, 
-      calendarId, 
-      assignedUserId, 
-      startTime, 
-      endTime, 
-      title,
-      // New enhanced parameters from frontend
-      serviceName,
-      servicePrice,
-      serviceDuration,
-      staffName,
-      customerFirstName,
-      customerLastName
-    } = params;
+    const { contactId, calendarId, assignedUserId, startTime, endTime, title } = params;
 
     if (!contactId || !calendarId || !startTime || !endTime) {
       return {
@@ -48,8 +34,18 @@ exports.handler = async function (event) {
     console.log('🕐 StartTime received:', startTime);
     console.log('🕐 EndTime received:', endTime);
     
-    const highlevelStartTime = startTime;
-    const highlevelEndTime = endTime;
+    // 🕐 DEBUG: Just pass through the time as-is for now
+    function convertToHighLevelTime(timeString) {
+      if (!timeString) return timeString;
+      
+      console.log(`🕐 Original time received: ${timeString}`);
+      console.log(`🕐 Passing through unchanged: ${timeString}`);
+      
+      return timeString;
+    }
+    
+    const highlevelStartTime = convertToHighLevelTime(startTime);
+    const highlevelEndTime = convertToHighLevelTime(endTime);
     
     console.log('🕐 Final times for HighLevel API:');
     console.log('🕐 StartTime for HighLevel:', highlevelStartTime);
@@ -68,8 +64,8 @@ exports.handler = async function (event) {
       calendarId,
       locationId: "7LYI93XFo8j4nZfswlaz",
       contactId,
-      startTime: highlevelStartTime,
-      endTime: highlevelEndTime,
+      startTime: highlevelStartTime, // ✅ Use UTC time for HighLevel
+      endTime: highlevelEndTime,     // ✅ Use UTC time for HighLevel
     };
 
     console.log('🕐 Final payload for HighLevel API:', JSON.stringify({ startTime: payload.startTime, endTime: payload.endTime }, null, 2));
@@ -92,30 +88,7 @@ exports.handler = async function (event) {
     );
 
     const newBooking = response.data || null;
-    console.log("📅 Extracted booking from HighLevel API:", newBooking);
-
-    // ✅ CRITICAL FIX: Add startTime and endTime to the booking object
-    // since HighLevel API doesn't return them in the response
-    newBooking.startTime = startTime;
-    newBooking.endTime = endTime;
-    
-    console.log("✅ Added startTime and endTime to booking object:");
-    console.log("   startTime:", newBooking.startTime);
-    console.log("   endTime:", newBooking.endTime);
-
-    // 📝 Prepare enhanced data for Supabase
-    const customerName = `${customerFirstName || ''} ${customerLastName || ''}`.trim() || null;
-    
-    const enhancedData = {
-      serviceName: serviceName || null,
-      servicePrice: servicePrice ? parseFloat(servicePrice) : null,
-      serviceDuration: serviceDuration ? parseInt(serviceDuration) : null,
-      staffName: staffName || null,
-      customerName: customerName,
-      paymentStatus: null, // Will be blank for now as requested
-    };
-
-    console.log("📝 Enhanced data to save:", JSON.stringify(enhancedData, null, 2));
+    console.log("📅 Extracted booking:", newBooking);
 
     let dbInsert = null;
     try {
@@ -123,9 +96,7 @@ exports.handler = async function (event) {
         throw new Error("Invalid booking data received from API");
       }
       
-      // Pass enhanced data as second parameter
-      dbInsert = await saveBookingToDB(newBooking, enhancedData);
-      console.log("✅ DB Insert successful:", dbInsert);
+      dbInsert = await saveBookingToDB(newBooking);
     } catch (dbError) {
       console.error("❌ DB save failed:", dbError.message);
       console.error("❌ Booking data that failed:", JSON.stringify(newBooking, null, 2));
@@ -135,7 +106,7 @@ exports.handler = async function (event) {
     // 🔗 Build website link for this contact
     const websiteUrl = `https://restyle-93b772.webflow.io/bookings?id=${contactId}`;
 
-    // 🌐 Call your own updatecustomer function to update contact's website
+    // 🌐 Call your own updatecustomer function to update contact’s website
     let websiteUpdate = null;
     try {
       const updateRes = await axios.get(

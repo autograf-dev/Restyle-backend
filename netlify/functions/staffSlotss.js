@@ -56,6 +56,32 @@ function timeToMinutes(timeString) {
   return hours * 60 + minutes;
 }
 
+/** weekday index (0=Sunday..6=Saturday) in TARGET_TZ for a Date */
+function dayOfWeekInTZ(date) {
+  const dtf = new Intl.DateTimeFormat("en-US", {
+    timeZone: TARGET_TZ,
+    weekday: "long",
+  });
+  const name = dtf.format(date);
+  const map = { Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 };
+  return map[name];
+}
+
+/** today's date at midnight for TARGET_TZ */
+function tzTodayDate() {
+  const dtf = new Intl.DateTimeFormat("en-CA", {
+    timeZone: TARGET_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const parts = dtf.formatToParts(new Date());
+  const y = parseInt(parts.find(p => p.type === "year").value, 10);
+  const m = parseInt(parts.find(p => p.type === "month").value, 10);
+  const d = parseInt(parts.find(p => p.type === "day").value, 10);
+  return new Date(y, m - 1, d);
+}
+
 // Note: use end-exclusive for blocks to allow immediate post-break slot
 function isWithinRangeExclusiveEnd(minutes, start, end) {
   return minutes >= start && minutes < end;
@@ -99,7 +125,7 @@ exports.handler = async function (event) {
 
     const serviceDurationMinutes = serviceDuration ? parseInt(serviceDuration) : 30;
 
-    let startDate = new Date();
+      let startDate = tzTodayDate();
     if (date) {
       const parts = date.split("-");
       if (parts.length === 3) {
@@ -197,10 +223,11 @@ exports.handler = async function (event) {
       }));
     }
     const isDateInTimeOff = (date) => {
+      const dayKey = ymdInTZ(date); // YYYY-MM-DD in TARGET_TZ
       for (const period of timeOffList) {
-        const start = new Date(period.start.getFullYear(), period.start.getMonth(), period.start.getDate());
-        const end = new Date(period.end.getFullYear(), period.end.getMonth(), period.end.getDate());
-        if (date >= start && date < end) return true;
+        const startKey = ymdInTZ(period.start);
+        const endKey = ymdInTZ(period.end);
+        if (dayKey >= startKey && dayKey < endKey) return true; // end exclusive
       }
       return false;
     };
@@ -283,7 +310,7 @@ exports.handler = async function (event) {
       for (const block of timeBlockList) {
         if (block.recurring) {
           const dayNames = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
-          const currentDayName = dayNames[slotDate.getDay()];
+          const currentDayName = dayNames[dayOfWeekInTZ(slotDate)];
           let recurringDaysList = block.recurringDays || block.recurringDay;
           if (typeof recurringDaysList === 'string') {
             recurringDaysList = recurringDaysList.split(',').map(day => day.trim());
@@ -311,7 +338,7 @@ exports.handler = async function (event) {
     const filteredSlots = {};
     for (const day of daysToCheck) {
       const dateKey = ymdInTZ(day);
-      const dayOfWeek = day.getDay();
+      const dayOfWeek = dayOfWeekInTZ(day);
 
       const bh = businessHoursMap[dayOfWeek];
       if (!bh) continue;
