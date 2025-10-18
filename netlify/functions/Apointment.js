@@ -17,7 +17,32 @@ exports.handler = async function (event) {
     }
 
     const params = event.queryStringParameters || {};
-    const { contactId, calendarId, assignedUserId, startTime, endTime, title } = params;
+
+    // Helper to pick the first defined/truthy value among possible key variants
+    const pick = (...keys) => {
+      for (const k of keys) {
+        if (params[k] !== undefined && params[k] !== null && String(params[k]).length > 0) return params[k];
+      }
+      return undefined;
+    };
+
+    // Accept both camelCase and snake_case from frontend
+    const contactId = pick("contactId", "contact_id");
+    const calendarId = pick("calendarId", "calendar_id");
+    const assignedUserId = pick("assignedUserId", "assigned_user_id");
+    const startTime = pick("startTime", "start_time");
+    const endTime = pick("endTime", "end_time");
+    const title = pick("title");
+
+    // Extras for DB enrichment
+    const serviceName = pick("serviceName", "service_name");
+    const serviceDurationRaw = pick("serviceDuration", "booking_duration");
+    const servicePriceRaw = pick("servicePrice", "booking_price");
+    const staffName = pick("staffName", "assigned_barber_name");
+    const paymentStatus = pick("paymentStatus", "payment_status");
+    const customerNameRaw = pick("customerName", "customer_name", "customer_name_");
+    const customerFirstName = pick("customerFirstName", "first_name");
+    const customerLastName = pick("customerLastName", "last_name");
 
     if (!contactId || !calendarId || !startTime || !endTime) {
       return {
@@ -44,8 +69,8 @@ exports.handler = async function (event) {
       return timeString;
     }
     
-    const highlevelStartTime = convertToHighLevelTime(startTime);
-    const highlevelEndTime = convertToHighLevelTime(endTime);
+  const highlevelStartTime = convertToHighLevelTime(startTime);
+  const highlevelEndTime = convertToHighLevelTime(endTime);
     
     console.log('🕐 Final times for HighLevel API:');
     console.log('🕐 StartTime for HighLevel:', highlevelStartTime);
@@ -90,13 +115,35 @@ exports.handler = async function (event) {
     const newBooking = response.data || null;
     console.log("📅 Extracted booking:", newBooking);
 
+    // Prepare enhanced data for DB insert (normalize names/types)
+    const parsedDuration = serviceDurationRaw !== undefined && serviceDurationRaw !== null
+      ? Number(serviceDurationRaw)
+      : undefined;
+    const parsedPrice = servicePriceRaw !== undefined && servicePriceRaw !== null
+      ? Number(servicePriceRaw)
+      : undefined;
+
+    const customerName = customerNameRaw && String(customerNameRaw).trim().length > 0
+      ? String(customerNameRaw).trim()
+      : [customerFirstName, customerLastName].filter(Boolean).join(" ") || undefined;
+
+    const enhancedData = {
+      serviceName: serviceName || undefined,
+      serviceDuration: Number.isFinite(parsedDuration) ? parsedDuration : undefined,
+      servicePrice: Number.isFinite(parsedPrice) ? parsedPrice : undefined,
+      staffName: staffName || undefined,
+      paymentStatus: paymentStatus || undefined,
+      customerName: customerName || undefined,
+    };
+
     let dbInsert = null;
     try {
       if (!newBooking || !newBooking.id) {
         throw new Error("Invalid booking data received from API");
       }
       
-      dbInsert = await saveBookingToDB(newBooking);
+      // Pass enhancedData so Supabase gets extras even if frontend used camelCase
+      dbInsert = await saveBookingToDB(newBooking, enhancedData);
     } catch (dbError) {
       console.error("❌ DB save failed:", dbError.message);
       console.error("❌ Booking data that failed:", JSON.stringify(newBooking, null, 2));
