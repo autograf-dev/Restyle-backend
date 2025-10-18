@@ -18,10 +18,25 @@ async function saveBookingToDB(booking, enhancedData = {}) {
     // Ensure the referenced contact exists to satisfy FK constraint
     await ensureContactExists(booking.contactId)
 
-    // ✅ IMPORTANT: Extract startTime and endTime from the booking object
-    // The HighLevel API returns these fields directly
-    const bookingStartTime = booking.startTime || null
-    const bookingEndTime = booking.endTime || null
+    // ✅ IMPORTANT: Extract start/end time with robust fallbacks
+    // HL responses can vary; also allow frontend-provided times via enhancedData
+    const bookingStartTime =
+      booking.startTime ||
+      booking.start_time ||
+      booking.start ||
+      booking.startAt ||
+      enhancedData.startTime ||
+      enhancedData.start_time ||
+      null
+
+    const bookingEndTime =
+      booking.endTime ||
+      booking.end_time ||
+      booking.end ||
+      booking.endAt ||
+      enhancedData.endTime ||
+      enhancedData.end_time ||
+      null
     
     console.log("⏰ Time data from HighLevel API:")
     console.log("   Start Time:", bookingStartTime)
@@ -34,6 +49,14 @@ async function saveBookingToDB(booking, enhancedData = {}) {
       console.log("   Computed Duration:", computedDuration, "minutes")
     }
 
+    // Normalize numeric extras if provided as strings
+    const durationFromExtras = enhancedData.serviceDuration
+      ? Number(enhancedData.serviceDuration)
+      : undefined
+    const priceFromExtras = enhancedData.servicePrice
+      ? Number(enhancedData.servicePrice)
+      : undefined
+
     // Use enhanced data if provided, otherwise fall back to computed/booking values
     const mappedBooking = {
       id: booking.id,
@@ -42,7 +65,7 @@ async function saveBookingToDB(booking, enhancedData = {}) {
       title: booking.title || null,
       status: booking.status || null,
       appointment_status: booking.appoinmentStatus || booking.appointmentStatus || null,
-      assigned_user_id: booking.assignedUserId || null,
+      assigned_user_id: booking.assignedUserId || enhancedData.assignedUserId || null,
       address: booking.address || null,
       is_recurring: booking.isRecurring || false,
       trace_id: booking.traceId || null,
@@ -52,14 +75,17 @@ async function saveBookingToDB(booking, enhancedData = {}) {
       end_time: bookingEndTime,
       
       // Enhanced fields from frontend
-      booking_duration: enhancedData.serviceDuration || booking.booking_duration || computedDuration,
-      booking_price: enhancedData.servicePrice || booking.booking_price || null,
+      booking_duration: durationFromExtras ?? booking.booking_duration ?? computedDuration,
+      booking_price: priceFromExtras ?? booking.booking_price ?? null,
       payment_status: enhancedData.paymentStatus || booking.payment_status || null,
       
       // Customer/Staff/Service names from frontend
       customer_name_: enhancedData.customerName || null,
       assigned_barber_name: enhancedData.staffName || null,
       service_name: enhancedData.serviceName || null,
+
+      // Optional duplicate external id if your schema includes it
+      apptId: enhancedData.apptId || booking.apptId || booking.id || null,
     }
 
     console.log("🗂️ Mapped booking for DB:", JSON.stringify(mappedBooking, null, 2))

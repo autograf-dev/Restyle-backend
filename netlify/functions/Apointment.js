@@ -134,6 +134,11 @@ exports.handler = async function (event) {
       staffName: staffName || undefined,
       paymentStatus: paymentStatus || undefined,
       customerName: customerName || undefined,
+      // Ensure times are also available to DB if HL response lacks them
+      startTime: highlevelStartTime,
+      endTime: highlevelEndTime,
+      assignedUserId: assignedUserId || undefined,
+      apptId: undefined, // will be set after HL response if needed
     };
 
     let dbInsert = null;
@@ -141,9 +146,10 @@ exports.handler = async function (event) {
       if (!newBooking || !newBooking.id) {
         throw new Error("Invalid booking data received from API");
       }
-      
-      // Pass enhancedData so Supabase gets extras even if frontend used camelCase
-      dbInsert = await saveBookingToDB(newBooking, enhancedData);
+  // Pass enhancedData so Supabase gets extras even if frontend used camelCase
+  // If your DB has an apptId column different from id, forward it explicitly
+  const enhancedWithIds = { ...enhancedData, apptId: newBooking.id };
+  dbInsert = await saveBookingToDB(newBooking, enhancedWithIds);
     } catch (dbError) {
       console.error("❌ DB save failed:", dbError.message);
       console.error("❌ Booking data that failed:", JSON.stringify(newBooking, null, 2));
