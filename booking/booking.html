@@ -603,7 +603,7 @@
 
         ${isCancelled ? '' : `
           <div class="booking-actions">
-            <a href="/update-booking?id=${booking.id}"
+            <a href="https://restyle-app.netlify.app/update?id=${booking.id}"
                class="btn btn-primary ${withinTwoHours ? 'disabled' : ''}"
                ${withinTwoHours ? 'onclick="return false;" title="Cannot reschedule - booking starts within 2 hours"' : ''}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
