@@ -114,7 +114,7 @@ exports.handler = async function (event) {
   }
 
   try {
-    const { calendarId, userId, date, serviceDuration } = event.queryStringParameters || {};
+    const { calendarId, userId, date, serviceDuration, page } = event.queryStringParameters || {};
     if (!calendarId) {
       return {
         statusCode: 400,
@@ -124,6 +124,9 @@ exports.handler = async function (event) {
     }
 
     const serviceDurationMinutes = serviceDuration ? parseInt(serviceDuration) : 30;
+    const pageNum = page ? parseInt(page) : 1;
+    const daysPerPage = 7;
+    const totalDays = 30;
 
       let startDate = tzTodayDate();
     if (date) {
@@ -133,9 +136,13 @@ exports.handler = async function (event) {
       }
     }
 
-    const totalDays = 30;
+    // Calculate which days to fetch for this page
+    const startDay = (pageNum - 1) * daysPerPage;
+    const endDay = Math.min(startDay + daysPerPage, totalDays);
+    const hasMore = endDay < totalDays;
+
     const daysToCheck = [];
-    for (let i = 0; i < totalDays; i++) {
+    for (let i = startDay; i < endDay; i++) {
       const d = new Date(startDate);
       d.setDate(startDate.getDate() + i);
       daysToCheck.push(d);
@@ -388,7 +395,7 @@ exports.handler = async function (event) {
       }
     }
 
-    console.log(`📊 Final results: ${Object.keys(filteredSlots).length} days with slots, ${timeBlockList.length} time blocks processed, ${existingBookings.length} existing bookings blocked (duration-aware), serviceDuration=${serviceDurationMinutes}min - TZ=${TARGET_TZ}`);
+    console.log(`📊 Final results: ${Object.keys(filteredSlots).length} days with slots, ${timeBlockList.length} time blocks processed, ${existingBookings.length} existing bookings blocked (duration-aware), serviceDuration=${serviceDurationMinutes}min - TZ=${TARGET_TZ} - Page ${pageNum}`);
 
     return {
       statusCode: 200,
@@ -398,6 +405,9 @@ exports.handler = async function (event) {
         activeDay: "allDays",
         startDate: startDate.toISOString().split("T")[0],
         slots: filteredSlots,
+        page: pageNum,
+        hasMore: hasMore,
+        totalPages: Math.ceil(totalDays / daysPerPage),
         debug: userId ? {
           barberWeekends,
           barberWeekendIndexes,
@@ -405,9 +415,10 @@ exports.handler = async function (event) {
           timeOffList,
           timeBlockList,
           existingBookings,
-          debugVersion: "3.13.1 - local-minute grid w/ duration & exclusive block end",
+          debugVersion: "3.14.1 - paginated 7-day chunks",
           serviceDurationMinutes: serviceDurationMinutes,
-          targetTimeZone: TARGET_TZ
+          targetTimeZone: TARGET_TZ,
+          pageInfo: { page: pageNum, daysPerPage, startDay, endDay, hasMore }
         } : undefined
       })
     };
