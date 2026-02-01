@@ -114,7 +114,11 @@ exports.handler = async function (event) {
   }
 
   try {
-    const { calendarId, userId, date, serviceDuration } = event.queryStringParameters || {};
+    const { calendarId, userId, date, serviceDuration, debug } = event.queryStringParameters || {};
+    const verboseDebug = debug === "1" || debug === "true";
+    const debugLog = (...args) => {
+      if (verboseDebug) console.log(...args);
+    };
     if (!calendarId) {
       return {
         statusCode: 400,
@@ -232,12 +236,13 @@ exports.handler = async function (event) {
       return false;
     };
 
-    // ---- time blocks
-    let timeBlockList = [];
+    // ---- time blocks (indexed by date for O(1) lookup)
+    let recurringBlocks = [];  // blocks that apply to any day
+    let dateBlocksMap = {};    // non-recurring blocks indexed by YYYY-MM-DD
     if (userId) {
       const { data: blockData } = await supabase.from("time_block").select("*").eq("ghl_id", userId);
-      console.log(`🔍 Fetched ${blockData?.length || 0} time blocks for user ${userId}`);
-      timeBlockList = (blockData || []).map(item => {
+      debugLog(`🔍 Fetched ${blockData?.length || 0} time blocks for user ${userId}`);
+      (blockData || []).forEach(item => {
         const recurringRaw = item["Block/Recurring"];
         const recurring = recurringRaw === true || 
                           recurringRaw === "true" || 
@@ -256,14 +261,26 @@ exports.handler = async function (event) {
           name: item["Block/Name"] || "Time Block",
           version: "3.1"
         };
-        console.log(`📅 Time block: ${block.name}, recurring: ${block.recurring} (raw: ${recurringRaw}), days: [${block.recurringDays.join(',')}], array length: ${block.recurringDays.length}, time: ${block.start}-${block.end} minutes`);
-        console.log(`📅 Full block object:`, JSON.stringify(block, null, 2));
-        return block;
+        debugLog(`📅 Time block: ${block.name}, recurring: ${block.recurring} (raw: ${recurringRaw}), days: [${block.recurringDays.join(',')}], array length: ${block.recurringDays.length}, time: ${block.start}-${block.end} minutes`);
+        
+        if (block.recurring) {
+          recurringBlocks.push(block);
+        } else if (block.date) {
+          // Index non-recurring blocks by date key for O(1) lookup
+          try {
+            const blockDateKey = ymdInTZ(new Date(block.date));
+            if (!dateBlocksMap[blockDateKey]) dateBlocksMap[blockDateKey] = [];
+            dateBlocksMap[blockDateKey].push(block);
+          } catch (e) {
+            console.warn(`Invalid time_block date format:`, block.date, e.message);
+          }
+        }
       });
+      debugLog(`📅 Indexed: ${recurringBlocks.length} recurring blocks, ${Object.keys(dateBlocksMap).length} dates with non-recurring blocks`);
     }
 
-    // ---- existing bookings
-    let existingBookings = [];
+    // ---- existing bookings (indexed by date for O(1) lookup)
+    let bookingsMap = {};
     if (userId) {
       const { data: bookingsData, error: bookingsError } = await supabase
         .from("restyle_bookings")
@@ -277,59 +294,53 @@ exports.handler = async function (event) {
       if (bookingsError) {
         console.error("Failed to fetch existing bookings:", bookingsError);
       } else {
-        existingBookings = (bookingsData || []).map(booking => {
+        // Index bookings by date for O(1) lookup instead of iterating all bookings per slot
+        (bookingsData || []).forEach(booking => {
           const startTime = new Date(booking.start_time);
           const duration = parseInt(booking.booking_duration) || 30;
           const endTime = new Date(startTime.getTime() + duration * 60000);
           const startDayKey = ymdInTZ(startTime);
-          const endDayKey = ymdInTZ(endTime);
           const startMinutes = minutesInTZ(startTime);
           const endMinutes = minutesInTZ(endTime);
-          console.log(`📅 Booking: ${startTime.toISOString()} → ${startDayKey} ${Math.floor(startMinutes/60)}:${String(startMinutes%60).padStart(2,"0")}–${Math.floor(endMinutes/60)}:${String(endMinutes%60).padStart(2,"0")} (${TARGET_TZ}) for ${duration}min`);
-          return { startTime, endTime, startDayKey, endDayKey, startMinutes, endMinutes };
+          debugLog(`📅 Booking: ${startTime.toISOString()} → ${startDayKey} ${Math.floor(startMinutes/60)}:${String(startMinutes%60).padStart(2,"0")}–${Math.floor(endMinutes/60)}:${String(endMinutes%60).padStart(2,"0")} (${TARGET_TZ}) for ${duration}min`);
+          
+          if (!bookingsMap[startDayKey]) bookingsMap[startDayKey] = [];
+          bookingsMap[startDayKey].push({ startMinutes, endMinutes });
         });
-        console.log(`📅 Fetched ${existingBookings.length} existing bookings for user ${userId}`);
+        debugLog(`📅 Indexed ${bookingsData?.length || 0} existing bookings across ${Object.keys(bookingsMap).length} days`);
       }
     }
 
     // duration-aware overlap: true if [mins, mins+dur) overlaps any booking [start, end)
+    // Now O(bookings_on_that_day) instead of O(all_bookings)
     const isSlotBooked = (slotDate, slotMinutes, durMinutes) => {
       const slotDayKey = ymdInTZ(slotDate);
       const slotEnd = slotMinutes + durMinutes;
-      for (const booking of existingBookings) {
-        if (booking.startDayKey === slotDayKey) {
-          if (slotMinutes < booking.endMinutes && slotEnd > booking.startMinutes) {
-            return true;
-          }
+      const dayBookings = bookingsMap[slotDayKey] || [];
+      for (const booking of dayBookings) {
+        if (slotMinutes < booking.endMinutes && slotEnd > booking.startMinutes) {
+          return true;
         }
       }
       return false;
     };
 
-    const isSlotBlocked = (slotDate, slotMinutes) => {
-      for (const block of timeBlockList) {
-        if (block.recurring) {
-          const dayNames = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
-          const currentDayName = dayNames[dayOfWeekInTZ(slotDate)];
-          let recurringDaysList = block.recurringDays || block.recurringDay;
-          if (typeof recurringDaysList === 'string') {
-            recurringDaysList = recurringDaysList.split(',').map(day => day.trim());
-          }
-          if (recurringDaysList && recurringDaysList.includes(currentDayName)) {
-            if (isWithinRangeExclusiveEnd(slotMinutes, block.start, block.end)) return true;
-          }
-        } else if (block.date) {
-          let blockDateOnlyKey;
-          try {
-            blockDateOnlyKey = ymdInTZ(new Date(block.date));
-          } catch (e) {
-            console.warn(`Invalid time_block date format:`, block.date, e.message);
-          }
-          const currDateOnlyKey = ymdInTZ(slotDate);
-          if (blockDateOnlyKey && blockDateOnlyKey === currDateOnlyKey && isWithinRangeExclusiveEnd(slotMinutes, block.start, block.end)) {
-            return true;
-          }
+    // Now O(recurring_blocks + blocks_on_that_day) instead of O(all_blocks)
+    const isSlotBlocked = (slotDate, slotMinutes, currentDayName, slotDayKey) => {
+      // Check recurring blocks
+      for (const block of recurringBlocks) {
+        let recurringDaysList = block.recurringDays || block.recurringDay;
+        if (typeof recurringDaysList === 'string') {
+          recurringDaysList = recurringDaysList.split(',').map(day => day.trim());
         }
+        if (recurringDaysList && recurringDaysList.includes(currentDayName)) {
+          if (isWithinRangeExclusiveEnd(slotMinutes, block.start, block.end)) return true;
+        }
+      }
+      // Check non-recurring blocks for this specific date (O(1) lookup)
+      const dayBlocks = dateBlocksMap[slotDayKey] || [];
+      for (const block of dayBlocks) {
+        if (isWithinRangeExclusiveEnd(slotMinutes, block.start, block.end)) return true;
       }
       return false;
     };
@@ -345,7 +356,7 @@ exports.handler = async function (event) {
       const openTime = bh.open_time;
       const closeTime = bh.close_time;
 
-      console.log(`🕐 Business hours for day ${dayOfWeek}: open=${openTime}, close=${closeTime}, serviceDuration=${serviceDurationMinutes}min`);
+      debugLog(`🕐 Business hours for day ${dayOfWeek}: open=${openTime}, close=${closeTime}, serviceDuration=${serviceDurationMinutes}min`);
 
       // start from local-minute grid
       let validMins = (slotsData[dateKey]?.minutes || []).slice();
@@ -357,7 +368,7 @@ exports.handler = async function (event) {
           const allowed = mins >= openTime && serviceEndTime <= closeTime;
           if (allowed === false) {
             const dbg = displayFromMinutes(mins);
-            console.log(`🔍 Store-level filtering: slot=${dbg} (${mins}min), serviceEnd=${serviceEndTime}, businessClose=${closeTime}, allowed=${allowed}`);
+            debugLog(`🔍 Store-level filtering: slot=${dbg} (${mins}min), serviceEnd=${serviceEndTime}, businessClose=${closeTime}, allowed=${allowed}`);
           }
           return allowed;
         } else {
@@ -371,13 +382,18 @@ exports.handler = async function (event) {
         if (!barberHours || (barberHours.start === 0 && barberHours.end === 0)) continue;
         if (isDateInTimeOff(day)) continue;
 
+        // Pre-compute day info once per day instead of per slot
+        const dayNames = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+        const currentDayName = dayNames[dayOfWeek];
+        const slotDayKey = dateKey;
+        
         validMins = validMins.filter(mins => {
-          const isBlocked = isSlotBlocked(day, mins);
+          const isBlocked = isSlotBlocked(day, mins, currentDayName, slotDayKey);
           const isBooked = isSlotBooked(day, mins, serviceDurationMinutes);
           const serviceEndTime = mins + serviceDurationMinutes;
           const withinRange = mins >= barberHours.start && serviceEndTime <= barberHours.end;
           const dbg = displayFromMinutes(mins);
-          console.log(`🔍 Slot ${dbg} (${mins} min): barberStart=${barberHours.start}, barberEnd=${barberHours.end}, serviceEnd=${serviceEndTime}, withinRange=${withinRange}, blocked=${isBlocked}, booked=${isBooked}`);
+          debugLog(`🔍 Slot ${dbg} (${mins} min): barberStart=${barberHours.start}, barberEnd=${barberHours.end}, serviceEnd=${serviceEndTime}, withinRange=${withinRange}, blocked=${isBlocked}, booked=${isBooked}`);
           return withinRange && !isBlocked && !isBooked;
         });
       }
@@ -388,7 +404,7 @@ exports.handler = async function (event) {
       }
     }
 
-    console.log(`📊 Final results: ${Object.keys(filteredSlots).length} days with slots, ${timeBlockList.length} time blocks processed, ${existingBookings.length} existing bookings blocked (duration-aware), serviceDuration=${serviceDurationMinutes}min - TZ=${TARGET_TZ}`);
+    console.log(`📊 Final results: ${Object.keys(filteredSlots).length} days with slots, ${recurringBlocks.length} recurring + ${Object.keys(dateBlocksMap).length} date-specific blocks, ${Object.keys(bookingsMap).length} days with bookings, serviceDuration=${serviceDurationMinutes}min - TZ=${TARGET_TZ}`);
 
     return {
       statusCode: 200,
@@ -403,8 +419,9 @@ exports.handler = async function (event) {
           barberWeekendIndexes,
           barberHoursMap,
           timeOffList,
-          timeBlockList,
-          existingBookings,
+          recurringBlocks,
+          dateBlocksMap,
+          bookingsMap,
           debugVersion: "3.13.1 - local-minute grid w/ duration & exclusive block end",
           serviceDurationMinutes: serviceDurationMinutes,
           targetTimeZone: TARGET_TZ
